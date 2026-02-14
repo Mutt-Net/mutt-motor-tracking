@@ -26,6 +26,8 @@ class Vehicle(db.Model):
     costs = db.relationship('Cost', backref='vehicle', lazy=True)
     notes = db.relationship('Note', backref='vehicle', lazy=True)
     vcds_faults = db.relationship('VCDSFault', backref='vehicle', lazy=True)
+    guides = db.relationship('Guide', backref='vehicle', lazy=True)
+    photos = db.relationship('VehiclePhoto', backref='vehicle', lazy=True)
 
 class Maintenance(db.Model):
     __tablename__ = 'maintenance'
@@ -93,4 +95,27 @@ class VCDSFault(db.Model):
     detected_date = db.Column(db.Date)
     cleared_date = db.Column(db.Date)
     notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Guide(db.Model):
+    __tablename__ = 'guides'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id'), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    category = db.Column(db.String(50))
+    content = db.Column(db.Text)
+    interval_miles = db.Column(db.Integer)
+    interval_months = db.Column(db.Integer)
+    is_template = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class VehiclePhoto(db.Model):
+    __tablename__ = 'vehicle_photos'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id'), nullable=False)
+    filename = db.Column(db.String(200))
+    caption = db.Column(db.String(500))
+    is_primary = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

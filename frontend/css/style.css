@@ -56,6 +56,16 @@ header h1::before {
     color: var(--red);
 }
 
+.vehicle-selector {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.vehicle-selector select {
+    min-width: 200px;
+}
+
 nav {
     display: flex;
     gap: 0.5rem;
@@ -113,27 +123,28 @@ h3 {
 /* Stats Grid */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
 }
 
 .stat-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    padding: 1.5rem;
+    padding: 1rem;
     text-align: center;
 }
 
 .stat-card h3 {
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 0.5rem;
+    color: var(--silver-dim);
 }
 
 .stat-value {
-    font-size: 2rem;
+    font-size: 1.5rem;
     font-weight: bold;
     color: var(--red);
 }
@@ -398,7 +409,140 @@ textarea.vcds-input {
     border-bottom: none;
 }
 
+/* Profiles Grid */
+.profiles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.profile-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.profile-card:hover {
+    border-color: var(--red);
+}
+
+.profile-card.selected {
+    border-color: var(--red);
+    box-shadow: 0 0 10px rgba(204, 0, 0, 0.3);
+}
+
+.profile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.profile-card h3 {
+    color: var(--silver);
+    font-size: 1.25rem;
+    margin: 0;
+}
+
+.profile-card-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.profile-card-actions button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.profile-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.profile-info-item {
+    font-size: 0.875rem;
+}
+
+.profile-info-item label {
+    color: var(--silver-dim);
+    font-size: 0.75rem;
+}
+
+.profile-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.profile-stat {
+    text-align: center;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+}
+
+.profile-stat-value {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--red);
+}
+
+.profile-stat-label {
+    font-size: 0.75rem;
+    color: var(--silver-dim);
+}
+
+/* Charts */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.chart-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-container.chart-wide {
+    grid-column: 1 / -1;
+}
+
+.chart-container h3 {
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.chart-container canvas {
+    flex: 1;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 180px;
+    object-fit: contain;
+}
+
 /* Responsive */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 768px) {
     header {
         padding: 1rem;
@@ -424,4 +568,254 @@ textarea.vcds-input {
     .record-item {
         flex-direction: column;
     }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-container.chart-wide {
+        grid-column: 1;
+    }
+}
+
+/* Analytics */
+.analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.analytics-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+}
+
+.analytics-card h3 {
+    margin-bottom: 0.75rem;
+    color: var(--silver);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.analytics-card canvas {
+    flex: 1;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 220px;
+    object-fit: contain;
+}
+
+.analytics-card .intervals-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Service Intervals */
+.intervals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.interval-item {
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.interval-item.interval-due {
+    border-left: 3px solid var(--danger);
+}
+
+.interval-name {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    color: var(--silver);
+}
+
+.interval-bar {
+    height: 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.interval-fill {
+    height: 100%;
+    background: var(--success);
+    transition: width 0.3s;
+}
+
+.interval-due .interval-fill {
+    background: var(--danger);
+}
+
+.interval-info {
+    font-size: 0.75rem;
+    color: var(--silver-dim);
+    display: flex;
+    justify-content: space-between;
+}
+
+.interval-warning {
+    color: var(--danger);
+    font-weight: bold;
+}
+
+/* Guides */
+.guides-toolbar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.guides-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.guide-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+}
+
+.guide-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.guide-header h3 {
+    color: var(--silver);
+    margin: 0;
+}
+
+.guide-category {
+    background: var(--bg-tertiary);
+    color: var(--silver-dim);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.guide-content {
+    white-space: pre-wrap;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.guide-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--silver-dim);
+    margin-bottom: 1rem;
+}
+
+.guide-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Profile Export/Import */
+.profile-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Quick Actions */
+.quick-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.quick-actions .btn-primary {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Maintenance Alerts */
+.alerts-container {
+    margin-bottom: 1.5rem;
+}
+
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.alert-danger {
+    background: rgba(208, 2, 27, 0.2);
+    border: 1px solid var(--danger);
+    color: #ff6b6b;
+}
+
+.alert-warning {
+    background: rgba(245, 166, 35, 0.2);
+    border: 1px solid var(--warning);
+    color: #f5a623;
+}
+
+.alert-info {
+    background: rgba(74, 144, 217, 0.2);
+    border: 1px solid #4a90d9;
+    color: #4a90d9;
+}
+
+/* Analytics Toolbar */
+.analytics-toolbar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.analytics-toolbar select {
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--silver);
+    border-radius: 4px;
+}
+
+.custom-dates {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.custom-dates input {
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--silver);
+    border-radius: 4px;
+}
+
+.custom-dates span {
+    color: var(--silver-dim);
 }

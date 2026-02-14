@@ -5,17 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MuttLogbook - VW EOS Project</title>
     <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="app-container">
         <header>
             <h1>MuttLogbook</h1>
+            <div class="vehicle-selector">
+                <select id="vehicle-select">
+                    <option value="">Select Vehicle</option>
+                </select>
+                <button class="btn-secondary" id="add-vehicle-btn">+ Add Vehicle</button>
+            </div>
             <nav>
                 <button class="nav-btn active" data-view="dashboard">Dashboard</button>
                 <button class="nav-btn" data-view="vehicle">Vehicle</button>
+                <button class="nav-btn" data-view="profiles">Profiles</button>
+                <button class="nav-btn" data-view="analytics">Analytics</button>
                 <button class="nav-btn" data-view="maintenance">Service Log</button>
                 <button class="nav-btn" data-view="mods">Mods</button>
                 <button class="nav-btn" data-view="costs">Costs</button>
+                <button class="nav-btn" data-view="guides">Guides</button>
                 <button class="nav-btn" data-view="notes">Notes</button>
                 <button class="nav-btn" data-view="vcds">VCDS Faults</button>
             </nav>
@@ -43,6 +53,44 @@
                         <p class="stat-value" id="active-faults">0</p>
                     </div>
                 </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Current Mileage</h3>
+                        <p class="stat-value" id="current-mileage">0 km</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Cost/Mile</h3>
+                        <p class="stat-value" id="cost-per-mile">£0.00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Services</h3>
+                        <p class="stat-value" id="total-services">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Active Mods</h3>
+                        <p class="stat-value" id="active-mods">0</p>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3>Spending by Category</h3>
+                        <canvas id="category-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Cost Trends Over Time</h3>
+                        <canvas id="trends-chart"></canvas>
+                    </div>
+                    <div class="chart-container chart-wide">
+                        <h3>Maintenance Timeline</h3>
+                        <canvas id="timeline-chart"></canvas>
+                    </div>
+                </div>
+                <div class="quick-actions">
+                    <button class="btn-primary" id="quick-add-service">+ Service</button>
+                    <button class="btn-primary" id="quick-add-mod">+ Mod</button>
+                    <button class="btn-primary" id="quick-add-cost">+ Expense</button>
+                </div>
+                <div id="maintenance-alerts" class="alerts-container"></div>
                 <div class="recent-activity">
                     <h3>Recent Service</h3>
                     <ul id="recent-list"></ul>
@@ -85,6 +133,12 @@
                 </form>
             </section>
 
+            <!-- Profiles View -->
+            <section id="profiles" class="view">
+                <h2>Vehicle Profiles</h2>
+                <div id="profiles-list" class="profiles-grid"></div>
+            </section>
+
             <!-- Maintenance View -->
             <section id="maintenance" class="view">
                 <h2>Service Log</h2>
@@ -125,7 +179,59 @@
                 <div id="notes-list" class="record-list"></div>
             </section>
 
-            <!-- VCDS View -->
+            <!-- Analytics View -->
+            <section id="analytics" class="view">
+                <h2>Analytics</h2>
+                <div class="analytics-toolbar">
+                    <select id="analytics-date-filter">
+                        <option value="all">All Time</option>
+                        <option value="6months">Last 6 Months</option>
+                        <option value="12months">Last 12 Months</option>
+                        <option value="ytd">Year to Date</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                    <div id="analytics-custom-dates" class="custom-dates" style="display:none;">
+                        <input type="date" id="analytics-start-date">
+                        <span>to</span>
+                        <input type="date" id="analytics-end-date">
+                        <button class="btn-secondary" id="apply-analytics-filter">Apply</button>
+                    </div>
+                </div>
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h3>Cost Over Time</h3>
+                        <canvas id="analytics-trend-chart"></canvas>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>Category Breakdown</h3>
+                        <canvas id="analytics-category-chart"></canvas>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>Yearly Comparison</h3>
+                        <canvas id="analytics-yearly-chart"></canvas>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>Service Intervals</h3>
+                        <div id="service-intervals"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Guides View -->
+            <section id="guides" class="view">
+                <h2>Guides & Workflows</h2>
+                <div class="guides-toolbar">
+                    <button class="btn-primary" id="add-guide-btn">Add Guide</button>
+                    <button class="btn-secondary" id="load-templates-btn">Load Templates</button>
+                    <select id="guide-category-filter">
+                        <option value="">All Categories</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="howto">How-To</option>
+                        <option value="mods">Mods</option>
+                    </select>
+                </div>
+                <div id="guides-list" class="guides-grid"></div>
+            </section>
             <section id="vcds" class="view">
                 <h2>VCDS Fault Codes</h2>
                 <div class="vcds-actions">
