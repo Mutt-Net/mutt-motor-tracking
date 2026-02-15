@@ -1,10 +1,23 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_from_directory
 from backend.extensions import db
 from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder
 from datetime import datetime, timezone
 import json
+import os
+import uuid
 
 routes = Blueprint('routes', __name__)
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
+UPLOAD_FOLDER = os.path.normpath(UPLOAD_FOLDER)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def secure_filename_with_ext(filename):
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    return f"{uuid.uuid4().hex}.{ext}" if ext else f"{uuid.uuid4().hex}"
 
 SERVICE_INTERVALS = {
     'oil_change': {'miles': 5000, 'months': 6},
@@ -786,3 +799,34 @@ def delete_reminder(id):
     db.session.delete(reminder)
     db.session.commit()
     return jsonify({'success': True})
+
+@routes.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename_with_ext(file.filename)
+        
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        
+        return jsonify({'filename': filename, 'url': f'/uploads/{filename}'}), 201
+    
+    return jsonify({'error': 'Invalid file type'}), 400
+
+@routes.route('/uploads/<filename>', methods=['GET'])
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+@routes.route('/upload/<filename>', methods=['DELETE'])
+def delete_upload(filename):
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        return jsonify({'success': True})
+    return jsonify({'error': 'File not found'}), 404
