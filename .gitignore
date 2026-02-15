@@ -6,4 +6,10 @@ __pycache__/
 venv/
 database/*.db
 *.db
+uploads/
 .DS_Store
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+instance/
