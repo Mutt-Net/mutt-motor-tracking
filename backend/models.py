@@ -10,6 +10,7 @@ class Vehicle(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    reg = db.Column(db.String(20), unique=True)
     vin = db.Column(db.String(17), unique=True)
     year = db.Column(db.Integer)
     make = db.Column(db.String(50))

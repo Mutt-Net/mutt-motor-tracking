@@ -47,7 +47,7 @@ def validate_required(data, required_fields):
 
 def serialize_vehicle(v):
     return {
-        'id': v.id, 'name': v.name, 'vin': v.vin, 'year': v.year,
+        'id': v.id, 'name': v.name, 'reg': v.reg, 'vin': v.vin, 'year': v.year,
         'make': v.make, 'model': v.model, 'engine': v.engine, 
         'transmission': v.transmission, 'mileage': v.mileage
     }
@@ -60,12 +60,12 @@ def get_vehicles():
 @routes.route('/vehicles', methods=['POST'])
 def add_vehicle():
     data = request.json or {}
-    error = validate_required(data, ['name'])
+    error = validate_required(data, [])
     if error:
         return jsonify({'error': error}), 400
     
     vehicle = Vehicle(
-        name=data.get('name'), vin=data.get('vin'), year=data.get('year'),
+        name=data.get('name'), reg=data.get('reg'), vin=data.get('vin'), year=data.get('year'),
         make=data.get('make'), model=data.get('model'),
         engine=data.get('engine'), transmission=data.get('transmission'),
         mileage=data.get('mileage', 0)
@@ -88,7 +88,7 @@ def update_vehicle(id):
         return jsonify({'error': 'Vehicle not found'}), 404
     
     data = request.json or {}
-    for key in ['name', 'vin', 'year', 'make', 'model', 'engine', 'transmission', 'mileage']:
+    for key in ['name', 'reg', 'vin', 'year', 'make', 'model', 'engine', 'transmission', 'mileage']:
         if key in data:
             setattr(vehicle, key, data[key])
     db.session.commit()
@@ -131,12 +131,12 @@ def export_vehicle(id):
 @routes.route('/vehicles/import', methods=['POST'])
 def import_vehicle():
     data = request.json or {}
-    error = validate_required(data, ['name'])
+    error = validate_required(data, [])
     if error:
         return jsonify({'error': error}), 400
     
     vehicle = Vehicle(
-        name=data.get('name'), vin=data.get('vin'), year=data.get('year'),
+        name=data.get('name'), reg=data.get('reg'), vin=data.get('vin'), year=data.get('year'),
         make=data.get('make'), model=data.get('model'),
         engine=data.get('engine'), transmission=data.get('transmission'),
         mileage=data.get('mileage', 0)

@@ -819,3 +819,211 @@ textarea.vcds-input {
 .custom-dates span {
     color: var(--silver-dim);
 }
+
+/* Overview Section */
+.overview-header {
+    margin-bottom: 1.5rem;
+}
+
+.overview-vehicle-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.overview-vehicle-info h2 {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.overview-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.overview-stat {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    text-align: center;
+}
+
+.overview-stat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--silver-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.overview-stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--red);
+}
+
+.accordion-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.accordion-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.accordion-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.accordion-icon {
+    font-size: 1.25rem;
+}
+
+.accordion-title {
+    flex: 1;
+    font-weight: 500;
+    color: var(--silver);
+}
+
+.accordion-count {
+    background: var(--bg-tertiary);
+    color: var(--silver-dim);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+}
+
+.accordion-count.badge-active {
+    background: var(--danger);
+    color: white;
+}
+
+.accordion-toggle {
+    color: var(--silver-dim);
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+}
+
+.accordion-item.expanded .accordion-toggle {
+    transform: rotate(180deg);
+}
+
+.accordion-content {
+    display: none;
+    padding: 0 1rem 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.accordion-item.expanded .accordion-content {
+    display: block;
+}
+
+.overview-list {
+    list-style: none;
+}
+
+.overview-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+}
+
+.overview-list li:last-child {
+    border-bottom: none;
+}
+
+.overview-list .item-date {
+    color: var(--silver-dim);
+    margin-right: 0.5rem;
+}
+
+.overview-list .no-data {
+    color: var(--silver-dim);
+    font-style: italic;
+}
+
+.view-all-btn {
+    display: inline-block;
+    margin-top: 0.75rem;
+    background: none;
+    border: none;
+    color: var(--silver);
+    cursor: pointer;
+    font-size: 0.875rem;
+    text-decoration: underline;
+    padding: 0;
+}
+
+.view-all-btn:hover {
+    color: var(--red);
+}
+
+.images-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.image-thumb {
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+}
+
+.image-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.btn-small {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--silver);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 0.875rem;
+    padding: 0;
+}
+
+.btn-link:hover {
+    color: var(--red);
+}
+
+.no-data {
+    color: var(--silver-dim);
+    font-style: italic;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .overview-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .accordion-grid {
+        grid-template-columns: 1fr;
+    }
+}
