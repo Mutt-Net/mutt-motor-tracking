@@ -194,7 +194,6 @@ function showView(viewId) {
     switch(viewId) {
         case 'dashboard': loadDashboard(); break;
         case 'vehicle': loadVehicle(); break;
-        case 'profiles': loadProfiles(); break;
         case 'analytics': loadAnalytics(); break;
         case 'maintenance': loadMaintenance(); break;
         case 'mods': loadMods(); break;
@@ -638,85 +637,10 @@ async function deleteGuide(id) {
     }
 }
 
-async function loadProfiles() {
-    const vehicles = await apiCall('/vehicles');
-    const container = document.getElementById('profiles-list');
-    
-    if (vehicles.length === 0) {
-        container.innerHTML = '<p>No vehicles yet. Add one from the selector above.</p>';
-        return;
-    }
-    
-    container.innerHTML = await Promise.all(vehicles.map(async v => {
-        const [dashboard, maintenance, mods, costs] = await Promise.all([
-            apiCall(`/dashboard?vehicle_id=${v.id}`),
-            apiCall(`/maintenance?vehicle_id=${v.id}`),
-            apiCall(`/mods?vehicle_id=${v.id}`),
-            apiCall(`/costs?vehicle_id=${v.id}`)
-        ]);
-        
-        const activeMods = mods.filter(m => m.status === 'in_progress').length;
-        const plannedMods = mods.filter(m => m.status === 'planned').length;
-        
-        return `
-            <div class="profile-card ${v.id === currentVehicleId ? 'selected' : ''}" onclick="selectVehicle(${v.id})">
-                <div class="profile-card-header">
-                    <h3>${v.name}</h3>
-                    <div class="profile-card-actions">
-                        <button class="btn-secondary" onclick="event.stopPropagation(); editVehicle(${v.id})">Edit</button>
-                        <button class="btn-danger" onclick="event.stopPropagation(); deleteVehicle(${v.id})">Delete</button>
-                    </div>
-                </div>
-                <div class="profile-info">
-                    <div class="profile-info-item">
-                        <label>VIN</label>
-                        <span>${v.vin || 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Year</label>
-                        <span>${v.year || 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Mileage</label>
-                        <span>${v.mileage ? v.mileage.toLocaleString() + ' km' : 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Engine</label>
-                        <span>${v.engine || 'N/A'}</span>
-                    </div>
-                </div>
-                <div class="profile-stats">
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">£${(dashboard.total_spent || 0).toFixed(0)}</div>
-                        <div class="profile-stat-label">Total Spent</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${maintenance.length}</div>
-                        <div class="profile-stat-label">Service Records</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${activeMods}/${mods.length}</div>
-                        <div class="profile-stat-label">Mods Active</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${costs.length}</div>
-                        <div class="profile-stat-label">Expenses</div>
-                    </div>
-                </div>
-                <div class="profile-actions">
-                    <button class="btn-secondary" onclick="event.stopPropagation(); exportVehicle(${v.id})">Export JSON</button>
-                    <button class="btn-secondary" onclick="event.stopPropagation(); importVehicle()">Import</button>
-                </div>
-            </div>
-        `;
-    })).join('');
-}
-
 function selectVehicle(id) {
     currentVehicleId = id;
     localStorage.setItem(STORAGE_KEY, id);
     document.getElementById('vehicle-select').value = id;
-    loadProfiles();
     loadDashboard();
 }
 
