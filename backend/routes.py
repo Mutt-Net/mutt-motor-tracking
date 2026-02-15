@@ -1,56 +1,171 @@
-from flask import Blueprint, render_template, request, jsonify
-from backend.app import db
-from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto
-from datetime import datetime
+from flask import Blueprint, request, jsonify
+from backend.extensions import db
+from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder
+from datetime import datetime, timezone
 import json
-import csv
-import io
 
 routes = Blueprint('routes', __name__)
 
-@routes.route('/')
-def index():
-    return render_template('index.html')
+SERVICE_INTERVALS = {
+    'oil_change': {'miles': 5000, 'months': 6},
+    'brakes': {'miles': 20000, 'months': 24},
+    'tire_rotation': {'miles': 7500, 'months': 6},
+    'inspection': {'miles': 15000, 'months': 12},
+    'transmission': {'miles': 30000, 'months': 24},
+    'coolant': {'miles': 30000, 'months': 24},
+    'spark_plugs': {'miles': 30000, 'months': 36},
+    'air_filter': {'miles': 15000, 'months': 12},
+    'fuel_filter': {'miles': 30000, 'months': 24}
+}
 
-@routes.route('/api/vehicles', methods=['GET'])
+def parse_date(date_str):
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+def validate_required(data, required_fields):
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        return f"Missing required fields: {', '.join(missing)}"
+    return None
+
+def serialize_vehicle(v):
+    return {
+        'id': v.id, 'name': v.name, 'vin': v.vin, 'year': v.year,
+        'make': v.make, 'model': v.model, 'engine': v.engine, 
+        'transmission': v.transmission, 'mileage': v.mileage
+    }
+
+@routes.route('/vehicles', methods=['GET'])
 def get_vehicles():
     vehicles = Vehicle.query.all()
-    return jsonify([{
-        'id': v.id, 'name': v.name, 'vin': v.vin, 'year': v.year,
-        'engine': v.engine, 'transmission': v.transmission, 'mileage': v.mileage
-    } for v in vehicles])
+    return jsonify([serialize_vehicle(v) for v in vehicles])
 
-@routes.route('/api/vehicles', methods=['POST'])
+@routes.route('/vehicles', methods=['POST'])
 def add_vehicle():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['name'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     vehicle = Vehicle(
         name=data.get('name'), vin=data.get('vin'), year=data.get('year'),
+        make=data.get('make'), model=data.get('model'),
         engine=data.get('engine'), transmission=data.get('transmission'),
         mileage=data.get('mileage', 0)
     )
     db.session.add(vehicle)
     db.session.commit()
-    return jsonify({'id': vehicle.id})
+    return jsonify({'id': vehicle.id}), 201
 
-@routes.route('/api/vehicles/<int:id>', methods=['GET'])
+@routes.route('/vehicles/<int:id>', methods=['GET'])
 def get_vehicle(id):
-    vehicle = Vehicle.query.get_or_404(id)
-    return jsonify({
-        'id': vehicle.id, 'name': vehicle.name, 'vin': vehicle.vin, 'year': vehicle.year,
-        'engine': vehicle.engine, 'transmission': vehicle.transmission, 'mileage': vehicle.mileage
-    })
+    vehicle = db.session.get(Vehicle, id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    return jsonify(serialize_vehicle(vehicle))
 
-@routes.route('/api/vehicles/<int:id>', methods=['PUT'])
+@routes.route('/vehicles/<int:id>', methods=['PUT'])
 def update_vehicle(id):
-    vehicle = Vehicle.query.get_or_404(id)
-    data = request.json
-    for key in ['name', 'vin', 'year', 'engine', 'transmission', 'mileage']:
+    vehicle = db.session.get(Vehicle, id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    data = request.json or {}
+    for key in ['name', 'vin', 'year', 'make', 'model', 'engine', 'transmission', 'mileage']:
         if key in data:
             setattr(vehicle, key, data[key])
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/maintenance', methods=['GET'])
+@routes.route('/vehicles/<int:id>', methods=['DELETE'])
+def delete_vehicle(id):
+    vehicle = db.session.get(Vehicle, id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    db.session.delete(vehicle)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/vehicles/<int:id>/export', methods=['GET'])
+def export_vehicle(id):
+    vehicle = db.session.get(Vehicle, id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    maintenance = Maintenance.query.filter_by(vehicle_id=id).all()
+    mods = Mod.query.filter_by(vehicle_id=id).all()
+    costs = Cost.query.filter_by(vehicle_id=id).all()
+    notes = Note.query.filter_by(vehicle_id=id).all()
+    faults = VCDSFault.query.filter_by(vehicle_id=id).all()
+    fuel_entries = FuelEntry.query.filter_by(vehicle_id=id).all()
+    reminders = Reminder.query.filter_by(vehicle_id=id).all()
+    
+    return jsonify({
+        'vehicle': serialize_vehicle(vehicle),
+        'maintenance': [{'date': m.date.isoformat() if m.date else None, 'mileage': m.mileage, 'category': m.category, 'description': m.description, 'cost': m.cost, 'notes': m.notes} for m in maintenance],
+        'mods': [{'date': m.date.isoformat() if m.date else None, 'mileage': m.mileage, 'category': m.category, 'description': m.description, 'cost': m.cost, 'status': m.status, 'notes': m.notes} for m in mods],
+        'costs': [{'date': c.date.isoformat() if c.date else None, 'category': c.category, 'amount': c.amount, 'description': c.description} for c in costs],
+        'notes': [{'date': n.date.isoformat() if n.date else None, 'title': n.title, 'content': n.content, 'tags': n.tags} for n in notes],
+        'vcds_faults': [{'address': f.address, 'fault_code': f.fault_code, 'component': f.component, 'status': f.status, 'detected_date': f.detected_date.isoformat() if f.detected_date else None, 'notes': f.notes} for f in faults],
+        'fuel_entries': [{'date': f.date.isoformat() if f.date else None, 'mileage': f.mileage, 'gallons': f.gallons, 'price_per_gallon': f.price_per_gallon, 'total_cost': f.total_cost} for f in fuel_entries],
+        'reminders': [{'type': r.type, 'interval_miles': r.interval_miles, 'interval_months': r.interval_months, 'next_due_date': r.next_due_date.isoformat() if r.next_due_date else None, 'next_due_mileage': r.next_due_mileage} for r in reminders]
+    })
+
+@routes.route('/vehicles/import', methods=['POST'])
+def import_vehicle():
+    data = request.json or {}
+    error = validate_required(data, ['name'])
+    if error:
+        return jsonify({'error': error}), 400
+    
+    vehicle = Vehicle(
+        name=data.get('name'), vin=data.get('vin'), year=data.get('year'),
+        make=data.get('make'), model=data.get('model'),
+        engine=data.get('engine'), transmission=data.get('transmission'),
+        mileage=data.get('mileage', 0)
+    )
+    db.session.add(vehicle)
+    db.session.commit()
+    vehicle_id = vehicle.id
+    
+    for m in data.get('maintenance', []):
+        rec = Maintenance(
+            vehicle_id=vehicle_id, date=parse_date(m.get('date')),
+            mileage=m.get('mileage'), category=m.get('category'), description=m.get('description'),
+            cost=m.get('cost'), notes=m.get('notes')
+        )
+        db.session.add(rec)
+    
+    for m in data.get('mods', []):
+        mod = Mod(
+            vehicle_id=vehicle_id, date=parse_date(m.get('date')),
+            mileage=m.get('mileage'), category=m.get('category'), description=m.get('description'),
+            cost=m.get('cost'), status=m.get('status', 'completed'), notes=m.get('notes')
+        )
+        db.session.add(mod)
+    
+    for c in data.get('costs', []):
+        cost = Cost(
+            vehicle_id=vehicle_id, date=parse_date(c.get('date')),
+            category=c.get('category'), amount=c.get('amount'), description=c.get('description')
+        )
+        db.session.add(cost)
+    
+    for n in data.get('notes', []):
+        note = Note(
+            vehicle_id=vehicle_id, date=parse_date(n.get('date')),
+            title=n.get('title'), content=n.get('content'), tags=n.get('tags')
+        )
+        db.session.add(note)
+    
+    db.session.commit()
+    return jsonify({'id': vehicle_id}), 201
+
+@routes.route('/maintenance', methods=['GET'])
 def get_maintenance():
     vehicle_id = request.args.get('vehicle_id')
     query = Maintenance.query
@@ -64,11 +179,15 @@ def get_maintenance():
         'shop_name': m.shop_name, 'notes': m.notes
     } for m in records])
 
-@routes.route('/api/maintenance', methods=['POST'])
+@routes.route('/maintenance', methods=['POST'])
 def add_maintenance():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id', 'date'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     record = Maintenance(
-        vehicle_id=data.get('vehicle_id'), date=datetime.strptime(data.get('date'), '%Y-%m-%d').date() if data.get('date') else None,
+        vehicle_id=data.get('vehicle_id'), date=parse_date(data.get('date')),
         mileage=data.get('mileage'), category=data.get('category'), description=data.get('description'),
         parts_used=json.dumps(data.get('parts_used', [])) if data.get('parts_used') else None,
         labor_hours=data.get('labor_hours'), cost=data.get('cost'), shop_name=data.get('shop_name'),
@@ -76,16 +195,36 @@ def add_maintenance():
     )
     db.session.add(record)
     db.session.commit()
-    return jsonify({'id': record.id})
+    return jsonify({'id': record.id}), 201
 
-@routes.route('/api/maintenance/<int:id>', methods=['DELETE'])
+@routes.route('/maintenance/<int:id>', methods=['PUT'])
+def update_maintenance(id):
+    record = db.session.get(Maintenance, id)
+    if not record:
+        return jsonify({'error': 'Maintenance record not found'}), 404
+    
+    data = request.json or {}
+    for key in ['date', 'mileage', 'category', 'description', 'parts_used', 'labor_hours', 'cost', 'shop_name', 'notes']:
+        if key in data:
+            if key == 'date':
+                setattr(record, key, parse_date(data[key]))
+            elif key == 'parts_used':
+                setattr(record, key, json.dumps(data[key]) if data[key] else None)
+            else:
+                setattr(record, key, data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/maintenance/<int:id>', methods=['DELETE'])
 def delete_maintenance(id):
-    record = Maintenance.query.get_or_404(id)
+    record = db.session.get(Maintenance, id)
+    if not record:
+        return jsonify({'error': 'Maintenance record not found'}), 404
     db.session.delete(record)
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/mods', methods=['GET'])
+@routes.route('/mods', methods=['GET'])
 def get_mods():
     vehicle_id = request.args.get('vehicle_id')
     query = Mod.query
@@ -98,27 +237,34 @@ def get_mods():
         'parts': m.parts, 'cost': m.cost, 'status': m.status, 'notes': m.notes
     } for m in mods])
 
-@routes.route('/api/mods', methods=['POST'])
+@routes.route('/mods', methods=['POST'])
 def add_mod():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     mod = Mod(
-        vehicle_id=data.get('vehicle_id'), date=datetime.strptime(data.get('date'), '%Y-%m-%d').date() if data.get('date') else None,
+        vehicle_id=data.get('vehicle_id'), date=parse_date(data.get('date')),
         mileage=data.get('mileage'), category=data.get('category'), description=data.get('description'),
         parts=json.dumps(data.get('parts', [])) if data.get('parts') else None,
         cost=data.get('cost'), status=data.get('status', 'planned'), notes=data.get('notes')
     )
     db.session.add(mod)
     db.session.commit()
-    return jsonify({'id': mod.id})
+    return jsonify({'id': mod.id}), 201
 
-@routes.route('/api/mods/<int:id>', methods=['PUT'])
+@routes.route('/mods/<int:id>', methods=['PUT'])
 def update_mod(id):
-    mod = Mod.query.get_or_404(id)
-    data = request.json
+    mod = db.session.get(Mod, id)
+    if not mod:
+        return jsonify({'error': 'Mod not found'}), 404
+    
+    data = request.json or {}
     for key in ['date', 'mileage', 'category', 'description', 'parts', 'cost', 'status', 'notes']:
         if key in data:
-            if key == 'date' and data[key]:
-                setattr(mod, key, datetime.strptime(data[key], '%Y-%m-%d').date())
+            if key == 'date':
+                setattr(mod, key, parse_date(data[key]))
             elif key == 'parts':
                 setattr(mod, key, json.dumps(data[key]) if data[key] else None)
             else:
@@ -126,14 +272,16 @@ def update_mod(id):
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/mods/<int:id>', methods=['DELETE'])
+@routes.route('/mods/<int:id>', methods=['DELETE'])
 def delete_mod(id):
-    mod = Mod.query.get_or_404(id)
+    mod = db.session.get(Mod, id)
+    if not mod:
+        return jsonify({'error': 'Mod not found'}), 404
     db.session.delete(mod)
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/costs', methods=['GET'])
+@routes.route('/costs', methods=['GET'])
 def get_costs():
     vehicle_id = request.args.get('vehicle_id')
     query = Cost.query
@@ -145,18 +293,22 @@ def get_costs():
         'category': c.category, 'amount': c.amount, 'description': c.description
     } for c in costs])
 
-@routes.route('/api/costs', methods=['POST'])
+@routes.route('/costs', methods=['POST'])
 def add_cost():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     cost = Cost(
-        vehicle_id=data.get('vehicle_id'), date=datetime.strptime(data.get('date'), '%Y-%m-%d').date() if data.get('date') else None,
+        vehicle_id=data.get('vehicle_id'), date=parse_date(data.get('date')),
         category=data.get('category'), amount=data.get('amount'), description=data.get('description')
     )
     db.session.add(cost)
     db.session.commit()
-    return jsonify({'id': cost.id})
+    return jsonify({'id': cost.id}), 201
 
-@routes.route('/api/costs/summary', methods=['GET'])
+@routes.route('/costs/summary', methods=['GET'])
 def cost_summary():
     vehicle_id = request.args.get('vehicle_id')
     query = Cost.query
@@ -169,7 +321,7 @@ def cost_summary():
         summary[cat] = summary.get(cat, 0) + (c.amount or 0)
     return jsonify(summary)
 
-@routes.route('/api/notes', methods=['GET'])
+@routes.route('/notes', methods=['GET'])
 def get_notes():
     vehicle_id = request.args.get('vehicle_id')
     query = Note.query
@@ -181,26 +333,32 @@ def get_notes():
         'title': n.title, 'content': n.content, 'tags': n.tags
     } for n in notes])
 
-@routes.route('/api/notes', methods=['POST'])
+@routes.route('/notes', methods=['POST'])
 def add_note():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     note = Note(
-        vehicle_id=data.get('vehicle_id'), date=datetime.strptime(data.get('date'), '%Y-%m-%d').date() if data.get('date') else None,
+        vehicle_id=data.get('vehicle_id'), date=parse_date(data.get('date')),
         title=data.get('title'), content=data.get('content'),
         tags=json.dumps(data.get('tags', [])) if data.get('tags') else None
     )
     db.session.add(note)
     db.session.commit()
-    return jsonify({'id': note.id})
+    return jsonify({'id': note.id}), 201
 
-@routes.route('/api/notes/<int:id>', methods=['DELETE'])
+@routes.route('/notes/<int:id>', methods=['DELETE'])
 def delete_note(id):
-    note = Note.query.get_or_404(id)
+    note = db.session.get(Note, id)
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
     db.session.delete(note)
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/vcds', methods=['GET'])
+@routes.route('/vcds', methods=['GET'])
 def get_vcds_faults():
     vehicle_id = request.args.get('vehicle_id')
     query = VCDSFault.query
@@ -214,49 +372,59 @@ def get_vcds_faults():
         'cleared_date': f.cleared_date.isoformat() if f.cleared_date else None, 'notes': f.notes
     } for f in faults])
 
-@routes.route('/api/vcds', methods=['POST'])
+@routes.route('/vcds', methods=['POST'])
 def add_vcds_fault():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     fault = VCDSFault(
         vehicle_id=data.get('vehicle_id'), address=data.get('address'), component=data.get('component'),
         fault_code=data.get('fault_code'), description=data.get('description'), status=data.get('status', 'active'),
-        detected_date=datetime.strptime(data.get('detected_date'), '%Y-%m-%d').date() if data.get('detected_date') else None,
-        cleared_date=datetime.strptime(data.get('cleared_date'), '%Y-%m-%d').date() if data.get('cleared_date') else None,
+        detected_date=parse_date(data.get('detected_date')),
+        cleared_date=parse_date(data.get('cleared_date')),
         notes=data.get('notes')
     )
     db.session.add(fault)
     db.session.commit()
-    return jsonify({'id': fault.id})
+    return jsonify({'id': fault.id}), 201
 
-@routes.route('/api/vcds/<int:id>', methods=['PUT'])
+@routes.route('/vcds/<int:id>', methods=['PUT'])
 def update_vcds_fault(id):
-    fault = VCDSFault.query.get_or_404(id)
-    data = request.json
+    fault = db.session.get(VCDSFault, id)
+    if not fault:
+        return jsonify({'error': 'VCDS fault not found'}), 404
+    
+    data = request.json or {}
     for key in ['address', 'component', 'fault_code', 'description', 'status', 'notes']:
         if key in data:
             setattr(fault, key, data[key])
     if 'cleared_date' in data:
-        fault.cleared_date = datetime.strptime(data['cleared_date'], '%Y-%m-%d').date() if data['cleared_date'] else None
+        fault.cleared_date = parse_date(data['cleared_date'])
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/vcds/import', methods=['POST'])
+@routes.route('/vcds/import', methods=['POST'])
 def import_vcds():
     vehicle_id = request.json.get('vehicle_id')
     faults_data = request.json.get('faults', [])
+    if not vehicle_id:
+        return jsonify({'error': 'vehicle_id required'}), 400
+    
     imported = 0
     for f in faults_data:
         fault = VCDSFault(
             vehicle_id=vehicle_id, address=f.get('address'), component=f.get('component'),
             fault_code=f.get('fault_code'), description=f.get('description'),
-            status='active', detected_date=datetime.now().date()
+            status='active', detected_date=datetime.now(timezone.utc).date()
         )
         db.session.add(fault)
         imported += 1
     db.session.commit()
     return jsonify({'imported': imported})
 
-@routes.route('/api/vcds/parse', methods=['POST'])
+@routes.route('/vcds/parse', methods=['POST'])
 def parse_vcds():
     content = request.json.get('content', '')
     faults = []
@@ -289,9 +457,11 @@ def parse_vcds():
     
     return jsonify(faults)
 
-@routes.route('/api/dashboard', methods=['GET'])
+@routes.route('/dashboard', methods=['GET'])
 def dashboard():
     vehicle_id = request.args.get('vehicle_id')
+    if not vehicle_id:
+        return jsonify({'error': 'vehicle_id required'}), 400
     
     total_maintenance = db.session.query(db.func.sum(Maintenance.cost)).filter(Maintenance.vehicle_id == vehicle_id).scalar() or 0
     total_mods = db.session.query(db.func.sum(Mod.cost)).filter(Mod.vehicle_id == vehicle_id).scalar() or 0
@@ -311,15 +481,36 @@ def dashboard():
         'active_faults': active_faults
     })
 
-@routes.route('/api/analytics', methods=['GET'])
+@routes.route('/analytics', methods=['GET'])
 def analytics():
     vehicle_id = request.args.get('vehicle_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
     if not vehicle_id:
         return jsonify({'error': 'vehicle_id required'}), 400
     
-    maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id).order_by(Maintenance.date).all()
-    mods = Mod.query.filter_by(vehicle_id=vehicle_id).order_by(Mod.date).all()
-    costs = Cost.query.filter_by(vehicle_id=vehicle_id).order_by(Cost.date).all()
+    maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id)
+    mods = Mod.query.filter_by(vehicle_id=vehicle_id)
+    costs = Cost.query.filter_by(vehicle_id=vehicle_id)
+    
+    if start_date:
+        start = parse_date(start_date)
+        if start:
+            maintenance = maintenance.filter(Maintenance.date >= start)
+            mods = mods.filter(Mod.date >= start)
+            costs = costs.filter(Cost.date >= start)
+    
+    if end_date:
+        end = parse_date(end_date)
+        if end:
+            maintenance = maintenance.filter(Maintenance.date <= end)
+            mods = mods.filter(Mod.date <= end)
+            costs = costs.filter(Cost.date <= end)
+    
+    maintenance = maintenance.order_by(Maintenance.date).all()
+    mods = mods.order_by(Mod.date).all()
+    costs = costs.order_by(Cost.date).all()
     
     monthly_spending = {}
     category_spending = {}
@@ -352,20 +543,13 @@ def analytics():
     
     total_spent = sum(monthly_spending.values())
     
-    service_intervals = {
-        'oil_change': {'miles': 5000, 'months': 6},
-        'brakes': {'miles': 20000, 'months': 24},
-        'tire_rotation': {'miles': 7500, 'months': 6},
-        'inspection': {'miles': 15000, 'months': 12}
-    }
-    
     last_service = {}
-    for cat in service_intervals:
+    for cat in SERVICE_INTERVALS:
         rec = Maintenance.query.filter_by(vehicle_id=vehicle_id, category=cat).order_by(Maintenance.date.desc()).first()
         if rec and rec.mileage:
             last_service[cat] = {'date': rec.date.isoformat() if rec.date else None, 'mileage': rec.mileage}
     
-    vehicle = Vehicle.query.get(vehicle_id)
+    vehicle = db.session.get(Vehicle, vehicle_id)
     current_mileage = vehicle.mileage if vehicle else 0
     
     return jsonify({
@@ -373,12 +557,12 @@ def analytics():
         'yearly_spending': yearly_spending,
         'category_spending': category_spending,
         'total_spent': total_spent,
-        'service_intervals': service_intervals,
+        'service_intervals': SERVICE_INTERVALS,
         'last_service': last_service,
         'current_mileage': current_mileage
     })
 
-@routes.route('/api/guides', methods=['GET'])
+@routes.route('/guides', methods=['GET'])
 def get_guides():
     vehicle_id = request.args.get('vehicle_id')
     category = request.args.get('category')
@@ -396,9 +580,13 @@ def get_guides():
         'is_template': g.is_template
     } for g in guides])
 
-@routes.route('/api/guides', methods=['POST'])
+@routes.route('/guides', methods=['POST'])
 def add_guide():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['title'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     guide = Guide(
         vehicle_id=data.get('vehicle_id'), title=data.get('title'), category=data.get('category'),
         content=data.get('content'), interval_miles=data.get('interval_miles'),
@@ -406,16 +594,31 @@ def add_guide():
     )
     db.session.add(guide)
     db.session.commit()
-    return jsonify({'id': guide.id})
+    return jsonify({'id': guide.id}), 201
 
-@routes.route('/api/guides/<int:id>', methods=['DELETE'])
+@routes.route('/guides/<int:id>', methods=['PUT'])
+def update_guide(id):
+    guide = db.session.get(Guide, id)
+    if not guide:
+        return jsonify({'error': 'Guide not found'}), 404
+    
+    data = request.json or {}
+    for key in ['vehicle_id', 'title', 'category', 'content', 'interval_miles', 'interval_months', 'is_template']:
+        if key in data:
+            setattr(guide, key, data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/guides/<int:id>', methods=['DELETE'])
 def delete_guide(id):
-    guide = Guide.query.get_or_404(id)
+    guide = db.session.get(Guide, id)
+    if not guide:
+        return jsonify({'error': 'Guide not found'}), 404
     db.session.delete(guide)
     db.session.commit()
     return jsonify({'success': True})
 
-@routes.route('/api/guides/templates', methods=['GET'])
+@routes.route('/guides/templates', methods=['GET'])
 def get_guide_templates():
     templates = Guide.query.filter_by(is_template=True).all()
     return jsonify([{
@@ -423,7 +626,7 @@ def get_guide_templates():
         'interval_miles': g.interval_miles, 'interval_months': g.interval_months
     } for g in templates])
 
-@routes.route('/api/guides/templates', methods=['POST'])
+@routes.route('/guides/templates', methods=['POST'])
 def create_guide_templates():
     templates = [
         {'title': 'Oil Change', 'category': 'maintenance', 'content': '1. Warm up engine\n2. Drain old oil\n3. Replace filter\n4. Add new oil (5W-30)', 'interval_miles': 5000, 'interval_months': 6, 'is_template': True},
@@ -433,87 +636,17 @@ def create_guide_templates():
         {'title': 'VCDS Scan Guide', 'category': 'howto', 'content': '1. Connect VCDS cable to OBD port\n2. Open VCDS software\n3. Select Auto-Scan\n4. Note fault codes\n5. Clear if needed', 'interval_miles': None, 'interval_months': None, 'is_template': True},
         {'title': 'Spark Plug Replacement', 'category': 'maintenance', 'content': '1. Remove engine cover\n2. Disconnect ignition coils\n3. Remove old plugs\n4. Gap new plugs\n5. Install and reassemble', 'interval_miles': 30000, 'interval_months': 36, 'is_template': True},
     ]
+    created = 0
     for t in templates:
         existing = Guide.query.filter_by(title=t['title'], is_template=True).first()
         if not existing:
             guide = Guide(**t)
             db.session.add(guide)
+            created += 1
     db.session.commit()
-    return jsonify({'created': len(templates)})
+    return jsonify({'created': created})
 
-@routes.route('/api/vehicles/<int:id>/export', methods=['GET'])
-def export_vehicle(id):
-    vehicle = Vehicle.query.get_or_404(id)
-    maintenance = Maintenance.query.filter_by(vehicle_id=id).all()
-    mods = Mod.query.filter_by(vehicle_id=id).all()
-    costs = Cost.query.filter_by(vehicle_id=id).all()
-    notes = Note.query.filter_by(vehicle_id=id).all()
-    faults = VCDSFault.query.filter_by(vehicle_id=id).all()
-    
-    data = {
-        'vehicle': {
-            'name': vehicle.name, 'vin': vehicle.vin, 'year': vehicle.year,
-            'engine': vehicle.engine, 'transmission': vehicle.transmission, 'mileage': vehicle.mileage
-        },
-        'maintenance': [{'date': m.date.isoformat() if m.date else None, 'mileage': m.mileage, 'category': m.category, 'description': m.description, 'cost': m.cost, 'notes': m.notes} for m in maintenance],
-        'mods': [{'date': m.date.isoformat() if m.date else None, 'mileage': m.mileage, 'category': m.category, 'description': m.description, 'cost': m.cost, 'status': m.status, 'notes': m.notes} for m in mods],
-        'costs': [{'date': c.date.isoformat() if c.date else None, 'category': c.category, 'amount': c.amount, 'description': c.description} for c in costs],
-        'notes': [{'date': n.date.isoformat() if n.date else None, 'title': n.title, 'content': n.content, 'tags': n.tags} for n in notes],
-        'vcds_faults': [{'address': f.address, 'fault_code': f.fault_code, 'component': f.component, 'status': f.status, 'detected_date': f.detected_date.isoformat() if f.detected_date else None, 'notes': f.notes} for f in faults]
-    }
-    return jsonify(data)
-
-@routes.route('/api/vehicles/import', methods=['POST'])
-def import_vehicle():
-    data = request.json
-    vehicle = Vehicle(
-        name=data.get('name'), vin=data.get('vin'), year=data.get('year'),
-        engine=data.get('engine'), transmission=data.get('transmission'),
-        mileage=data.get('mileage', 0)
-    )
-    db.session.add(vehicle)
-    db.session.commit()
-    
-    vehicle_id = vehicle.id
-    
-    for m in data.get('maintenance', []):
-        rec = Maintenance(
-            vehicle_id=vehicle_id,
-            date=datetime.strptime(m['date'], '%Y-%m-%d').date() if m.get('date') else None,
-            mileage=m.get('mileage'), category=m.get('category'), description=m.get('description'),
-            cost=m.get('cost'), notes=m.get('notes')
-        )
-        db.session.add(rec)
-    
-    for m in data.get('mods', []):
-        mod = Mod(
-            vehicle_id=vehicle_id,
-            date=datetime.strptime(m['date'], '%Y-%m-%d').date() if m.get('date') else None,
-            mileage=m.get('mileage'), category=m.get('category'), description=m.get('description'),
-            cost=m.get('cost'), status=m.get('status', 'completed'), notes=m.get('notes')
-        )
-        db.session.add(mod)
-    
-    for c in data.get('costs', []):
-        cost = Cost(
-            vehicle_id=vehicle_id,
-            date=datetime.strptime(c['date'], '%Y-%m-%d').date() if c.get('date') else None,
-            category=c.get('category'), amount=c.get('amount'), description=c.get('description')
-        )
-        db.session.add(cost)
-    
-    for n in data.get('notes', []):
-        note = Note(
-            vehicle_id=vehicle_id,
-            date=datetime.strptime(n['date'], '%Y-%m-%d').date() if n.get('date') else None,
-            title=n.get('title'), content=n.get('content'), tags=n.get('tags')
-        )
-        db.session.add(note)
-    
-    db.session.commit()
-    return jsonify({'id': vehicle_id})
-
-@routes.route('/api/vehicle-photos', methods=['GET'])
+@routes.route('/vehicle-photos', methods=['GET'])
 def get_vehicle_photos():
     vehicle_id = request.args.get('vehicle_id')
     photos = VehiclePhoto.query.filter_by(vehicle_id=vehicle_id).all() if vehicle_id else []
@@ -522,9 +655,13 @@ def get_vehicle_photos():
         'caption': p.caption, 'is_primary': p.is_primary
     } for p in photos])
 
-@routes.route('/api/vehicle-photos', methods=['POST'])
+@routes.route('/vehicle-photos', methods=['POST'])
 def add_vehicle_photo():
-    data = request.json
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id', 'filename'])
+    if error:
+        return jsonify({'error': error}), 400
+    
     photo = VehiclePhoto(
         vehicle_id=data.get('vehicle_id'), filename=data.get('filename'),
         caption=data.get('caption'), is_primary=data.get('is_primary', False)
@@ -533,4 +670,119 @@ def add_vehicle_photo():
         VehiclePhoto.query.filter_by(vehicle_id=photo.vehicle_id, is_primary=True).update({'is_primary': False})
     db.session.add(photo)
     db.session.commit()
-    return jsonify({'id': photo.id})
+    return jsonify({'id': photo.id}), 201
+
+@routes.route('/fuel', methods=['GET'])
+def get_fuel_entries():
+    vehicle_id = request.args.get('vehicle_id')
+    query = FuelEntry.query
+    if vehicle_id:
+        query = query.filter_by(vehicle_id=vehicle_id)
+    entries = query.order_by(FuelEntry.date.desc()).all()
+    return jsonify([{
+        'id': f.id, 'vehicle_id': f.vehicle_id, 'date': f.date.isoformat() if f.date else None,
+        'mileage': f.mileage, 'gallons': f.gallons, 'price_per_gallon': f.price_per_gallon,
+        'total_cost': f.total_cost, 'station': f.station, 'notes': f.notes
+    } for f in entries])
+
+@routes.route('/fuel', methods=['POST'])
+def add_fuel_entry():
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
+    entry = FuelEntry(
+        vehicle_id=data.get('vehicle_id'), date=parse_date(data.get('date')),
+        mileage=data.get('mileage'), gallons=data.get('gallons'),
+        price_per_gallon=data.get('price_per_gallon'), total_cost=data.get('total_cost'),
+        station=data.get('station'), notes=data.get('notes')
+    )
+    db.session.add(entry)
+    db.session.commit()
+    return jsonify({'id': entry.id}), 201
+
+@routes.route('/fuel/<int:id>', methods=['PUT'])
+def update_fuel_entry(id):
+    entry = db.session.get(FuelEntry, id)
+    if not entry:
+        return jsonify({'error': 'Fuel entry not found'}), 404
+    
+    data = request.json or {}
+    for key in ['date', 'mileage', 'gallons', 'price_per_gallon', 'total_cost', 'station', 'notes']:
+        if key in data:
+            if key == 'date':
+                setattr(entry, key, parse_date(data[key]))
+            else:
+                setattr(entry, key, data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/fuel/<int:id>', methods=['DELETE'])
+def delete_fuel_entry(id):
+    entry = db.session.get(FuelEntry, id)
+    if not entry:
+        return jsonify({'error': 'Fuel entry not found'}), 404
+    db.session.delete(entry)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/reminders', methods=['GET'])
+def get_reminders():
+    vehicle_id = request.args.get('vehicle_id')
+    query = Reminder.query
+    if vehicle_id:
+        query = query.filter_by(vehicle_id=vehicle_id)
+    reminders = query.all()
+    return jsonify([{
+        'id': r.id, 'vehicle_id': r.vehicle_id, 'type': r.type,
+        'interval_miles': r.interval_miles, 'interval_months': r.interval_months,
+        'last_service_date': r.last_service_date.isoformat() if r.last_service_date else None,
+        'last_service_mileage': r.last_service_mileage,
+        'next_due_date': r.next_due_date.isoformat() if r.next_due_date else None,
+        'next_due_mileage': r.next_due_mileage, 'notes': r.notes
+    } for r in reminders])
+
+@routes.route('/reminders', methods=['POST'])
+def add_reminder():
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id', 'type'])
+    if error:
+        return jsonify({'error': error}), 400
+    
+    reminder = Reminder(
+        vehicle_id=data.get('vehicle_id'), type=data.get('type'),
+        interval_miles=data.get('interval_miles'), interval_months=data.get('interval_months'),
+        last_service_date=parse_date(data.get('last_service_date')),
+        last_service_mileage=data.get('last_service_mileage'),
+        next_due_date=parse_date(data.get('next_due_date')),
+        next_due_mileage=data.get('next_due_mileage'), notes=data.get('notes')
+    )
+    db.session.add(reminder)
+    db.session.commit()
+    return jsonify({'id': reminder.id}), 201
+
+@routes.route('/reminders/<int:id>', methods=['PUT'])
+def update_reminder(id):
+    reminder = db.session.get(Reminder, id)
+    if not reminder:
+        return jsonify({'error': 'Reminder not found'}), 404
+    
+    data = request.json or {}
+    for key in ['type', 'interval_miles', 'interval_months', 'last_service_date', 'last_service_mileage', 'next_due_date', 'next_due_mileage', 'notes']:
+        if key in data:
+            if 'date' in key:
+                setattr(reminder, key, parse_date(data[key]))
+            else:
+                setattr(reminder, key, data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/reminders/<int:id>', methods=['DELETE'])
+def delete_reminder(id):
+    reminder = db.session.get(Reminder, id)
+    if not reminder:
+        return jsonify({'error': 'Reminder not found'}), 404
+    db.session.delete(reminder)
+    db.session.commit()
+    return jsonify({'success': True})
