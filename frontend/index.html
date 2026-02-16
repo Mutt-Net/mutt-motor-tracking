@@ -27,6 +27,7 @@
                 <button class="nav-btn" data-view="guides">Guides</button>
                 <button class="nav-btn" data-view="notes">Notes</button>
                 <button class="nav-btn" data-view="vcds">VCDS Faults</button>
+                <button class="nav-btn" data-view="settings">Settings</button>
             </nav>
         </header>
 
@@ -55,7 +56,7 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Current Mileage</h3>
-                        <p class="stat-value" id="current-mileage">0 km</p>
+                        <p class="stat-value" id="current-mileage">0 mi</p>
                     </div>
                     <div class="stat-card">
                         <h3>Cost/Mile</h3>
@@ -114,7 +115,7 @@
                             <input type="number" id="v-year" value="2007">
                         </div>
                         <div class="form-group">
-                            <label>Mileage (km)</label>
+                            <label>Mileage (miles)</label>
                             <input type="number" id="v-mileage" value="116000">
                         </div>
                     </div>
@@ -142,14 +143,66 @@
             <!-- Mods View -->
             <section id="mods" class="view">
                 <h2>Modifications</h2>
-                <button class="btn-primary" id="add-mod-btn">Add Mod</button>
-                <div class="mod-filters">
-                    <select id="mod-status-filter">
-                        <option value="">All Status</option>
-                        <option value="planned">Planned</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="completed">Completed</option>
-                    </select>
+                
+                <!-- Mods Overview Cards -->
+                <div class="mods-overview">
+                    <div class="mods-summary-grid">
+                        <div class="mod-summary-card planned">
+                            <h3>Planned</h3>
+                            <div class="mod-summary-value" id="mod-planned-total">£0.00</div>
+                        </div>
+                        <div class="mod-summary-card in-progress">
+                            <h3>In Progress</h3>
+                            <div class="mod-summary-value" id="mod-progress-total">£0.00</div>
+                        </div>
+                        <div class="mod-summary-card completed">
+                            <h3>Completed</h3>
+                            <div class="mod-summary-value" id="mod-completed-total">£0.00</div>
+                        </div>
+                        <div class="mod-summary-card chart-half">
+                            <h3>Cost Trend</h3>
+                            <canvas id="mods-trend-chart"></canvas>
+                        </div>
+                        <div class="mod-summary-card add-card">
+                            <h3>Quick Add</h3>
+                            <div class="quick-add-fields">
+                                <input type="text" id="quick-mod-desc" placeholder="Description..." onfocus="document.getElementById('add-mod-btn').click()">
+                                <div class="quick-add-row">
+                                    <select id="quick-mod-category">
+                                        <option value="">Category</option>
+                                        <option value="engine">Engine</option>
+                                        <option value="suspension">Suspension</option>
+                                        <option value="exhaust">Exhaust</option>
+                                        <option value="interior">Interior</option>
+                                        <option value="exterior">Exterior</option>
+                                        <option value="brakes">Brakes</option>
+                                        <option value="wheels">Wheels</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="quick-add-row">
+                                    <input type="number" step="0.01" id="quick-mod-cost" placeholder="Cost (£)">
+                                    <select id="quick-mod-status">
+                                        <option value="planned">Planned</option>
+                                        <option value="in_progress">In Progress</option>
+                                        <option value="completed">Completed</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mod-actions">
+                    <button class="btn-primary" id="add-mod-btn">Add Mod</button>
+                    <div class="mod-filters">
+                        <select id="mod-status-filter">
+                            <option value="">All Status</option>
+                            <option value="planned">Planned</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
                 </div>
                 <div id="mods-list" class="record-list"></div>
             </section>
@@ -235,6 +288,74 @@
                     <span class="badge badge-cleared" id="cleared-fault-count">0 Cleared</span>
                 </div>
                 <div id="vcds-list" class="record-list"></div>
+            </section>
+            
+            <!-- Settings View -->
+            <section id="settings" class="view">
+                <h2>Settings</h2>
+                <div class="settings-container">
+                    <div class="settings-section">
+                        <h3>General Preferences</h3>
+                        <div class="settings-grid">
+                            <div class="setting-item">
+                                <label>Currency Symbol</label>
+                                <input type="text" id="setting-currency" value="£" maxlength="5">
+                                <button class="btn-secondary btn-small" onclick="saveSetting('currency_symbol', document.getElementById('setting-currency').value)">Save</button>
+                            </div>
+                            <div class="setting-item">
+                                <label>Mileage Unit</label>
+                                <select id="setting-mileage-unit">
+                                    <option value="miles">Miles</option>
+                                    <option value="km">Kilometers</option>
+                                </select>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('mileage_unit', document.getElementById('setting-mileage-unit').value)">Save</button>
+                            </div>
+                            <div class="setting-item">
+                                <label>Date Format</label>
+                                <select id="setting-date-format">
+                                    <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                                    <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                                    <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                                </select>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('date_format', document.getElementById('setting-date-format').value)">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Data Management</h3>
+                        <div class="settings-grid">
+                            <div class="setting-item">
+                                <label>Export All Data</label>
+                                <p class="setting-description">Download all your logbook data as a CSV file</p>
+                                <button class="btn-primary" id="export-csv-btn">Export CSV</button>
+                            </div>
+                            <div class="setting-item">
+                                <label>Backup Settings</label>
+                                <p class="setting-description">Download your settings as a JSON file</p>
+                                <button class="btn-primary" id="backup-settings-btn">Backup Settings</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Custom Settings</h3>
+                        <div id="custom-settings-list" class="custom-settings-list"></div>
+                        <div class="add-setting-form">
+                            <input type="text" id="new-setting-key" placeholder="Setting Key">
+                            <input type="text" id="new-setting-value" placeholder="Value">
+                            <button class="btn-secondary" onclick="addCustomSetting()">Add Setting</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Data View</h3>
+                        <div id="data-view-container">
+                            <button class="btn-primary" id="load-data-view-btn">Load Data</button>
+                            <div id="data-view-tables" class="data-view-tables"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>

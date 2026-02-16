@@ -149,3 +149,14 @@ class Reminder(db.Model):
     next_due_mileage = db.Column(db.Integer)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=utc_now)
+
+class Setting(db.Model):
+    __tablename__ = 'settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text)
+    value_type = db.Column(db.String(20), default='string')
+    description = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)

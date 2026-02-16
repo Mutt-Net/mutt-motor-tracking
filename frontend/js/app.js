@@ -135,7 +135,7 @@ document.getElementById('add-vehicle-btn').addEventListener('click', () => {
                     <input type="number" id="nv-year">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (km)</label>
+                    <label>Mileage (miles)</label>
                     <input type="number" id="nv-mileage" value="0">
                 </div>
             </div>
@@ -201,6 +201,7 @@ function showView(viewId) {
         case 'guides': loadGuides(); break;
         case 'notes': loadNotes(); break;
         case 'vcds': loadVCDS(); break;
+        case 'settings': loadSettings(); break;
     }
 }
 
@@ -219,7 +220,7 @@ async function loadDashboard() {
     document.getElementById('active-faults').textContent = data.active_faults || 0;
     
     const mileage = vehicle?.mileage || 0;
-    document.getElementById('current-mileage').textContent = `${mileage.toLocaleString()} km`;
+    document.getElementById('current-mileage').textContent = `${mileage.toLocaleString()} mi`;
     document.getElementById('cost-per-mile').textContent = mileage > 0 ? `£${(data.total_spent / mileage).toFixed(2)}` : '£0.00';
     document.getElementById('total-services').textContent = maintenance.length;
     const activeMods = mods.filter(m => m.status === 'in_progress').length;
@@ -666,7 +667,7 @@ async function editVehicle(id) {
                     <input type="number" id="ev-year" value="${v.year || ''}">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (km)</label>
+                    <label>Mileage (miles)</label>
                     <input type="number" id="ev-mileage" value="${v.mileage || 0}">
                 </div>
             </div>
@@ -789,7 +790,7 @@ async function loadMaintenance() {
                     <span class="record-date">${r.date || ''}</span>
                     <span class="record-category">${r.category || ''}</span>
                     <span class="record-cost">£${(r.cost || 0).toFixed(2)}</span>
-                    <span>${r.mileage || ''} km</span>
+                    <span>${r.mileage || ''} mi</span>
                 </div>
                 <div class="record-description">${r.description || ''}</div>
                 ${r.notes ? `<div class="record-notes">${r.notes}</div>` : ''}
@@ -811,7 +812,7 @@ document.getElementById('add-maintenance-btn').addEventListener('click', () => {
                     <input type="date" id="m-date" required>
                 </div>
                 <div class="form-group">
-                    <label>Mileage (km)</label>
+                    <label>Mileage (miles)</label>
                     <input type="number" id="m-mileage">
                 </div>
             </div>
@@ -826,6 +827,7 @@ document.getElementById('add-maintenance-btn').addEventListener('click', () => {
                     <option value="transmission">Transmission</option>
                     <option value="interior">Interior</option>
                     <option value="exterior">Exterior</option>
+                    <option value="tires_wheels">Tires & Wheels</option>
                     <option value="other">Other</option>
                 </select>
             </div>
@@ -902,7 +904,7 @@ async function editMaintenance(id) {
         <form id="maintenance-edit-form">
             <input type="hidden" id="me-id" value="${id}">
             <div class="form-group">
-                <label>Mileage (km)</label>
+                <label>Mileage (miles)</label>
                 <input type="number" id="me-mileage" value="${r.mileage || ''}">
             </div>
             <div class="form-group">
@@ -961,8 +963,34 @@ async function loadMods() {
     const mods = await apiCall(url);
     const filtered = statusFilter ? mods.filter(m => m.status === statusFilter) : mods;
     
+    // Calculate totals by status
+    const totals = { planned: 0, in_progress: 0, completed: 0 };
+    mods.forEach(m => {
+        if (totals.hasOwnProperty(m.status)) {
+            totals[m.status] += m.cost || 0;
+        }
+    });
+    
+    // Update summary cards
+    const plannedEl = document.getElementById('mod-planned-total');
+    const progressEl = document.getElementById('mod-progress-total');
+    const completedEl = document.getElementById('mod-completed-total');
+    if (plannedEl) plannedEl.textContent = `£${totals.planned.toFixed(2)}`;
+    if (progressEl) progressEl.textContent = `£${totals.in_progress.toFixed(2)}`;
+    if (completedEl) completedEl.textContent = `£${totals.completed.toFixed(2)}`;
+    
+    // Load trend chart
+    loadModsTrendChart(mods);
+    
     const list = document.getElementById('mods-list');
-    list.innerHTML = filtered.map(m => `
+    list.innerHTML = filtered.map(m => {
+        let partsDisplay = '';
+        try {
+            const partsArr = typeof m.parts === 'string' ? JSON.parse(m.parts || '[]') : (m.parts || []);
+            partsDisplay = partsArr.join(', ');
+        } catch (e) { partsDisplay = m.parts || ''; }
+        
+        return `
         <div class="record-item">
             <div class="record-info">
                 <div class="record-header">
@@ -972,13 +1000,89 @@ async function loadMods() {
                     <span class="record-cost">£${(m.cost || 0).toFixed(2)}</span>
                 </div>
                 <div class="record-description">${m.description || ''}</div>
+                ${m.mileage ? `<div class="record-detail"><small>Mileage: ${m.mileage} mi</small></div>` : ''}
+                ${partsDisplay ? `<div class="record-detail"><small>Parts: ${partsDisplay}</small></div>` : ''}
+                ${m.notes ? `<div class="record-detail"><small>Notes: ${m.notes}</small></div>` : ''}
             </div>
             <div class="record-actions">
                 <button class="btn-secondary" onclick="editMod(${m.id}, '${m.status}')">Edit</button>
                 <button class="btn-danger" onclick="deleteMod(${m.id})">Delete</button>
             </div>
         </div>
-    `).join('') || '<p>No mods yet</p>';
+    `}).join('') || '<p>No mods yet</p>';
+}
+
+async function loadModsTrendChart(mods) {
+    const ctx = document.getElementById('mods-trend-chart');
+    if (!ctx) return;
+    
+    if (window.modsTrendChart) {
+        window.modsTrendChart.destroy();
+    }
+    
+    const monthlyData = {};
+    mods.forEach(m => {
+        if (m.date && m.cost) {
+            const month = m.date.substring(0, 7);
+            if (!monthlyData[month]) {
+                monthlyData[month] = { planned: 0, in_progress: 0, completed: 0 };
+            }
+            monthlyData[month][m.status] = (monthlyData[month][m.status] || 0) + m.cost;
+        }
+    });
+    
+    const sortedMonths = Object.keys(monthlyData).sort();
+    
+    if (sortedMonths.length === 0) {
+        ctx.style.display = 'none';
+        return;
+    }
+    
+    ctx.style.display = 'block';
+    
+    window.modsTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: sortedMonths,
+            datasets: [
+                {
+                    label: 'Planned',
+                    data: sortedMonths.map(m => monthlyData[m].planned),
+                    borderColor: '#888888',
+                    backgroundColor: 'rgba(136, 136, 136, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                },
+                {
+                    label: 'In Progress',
+                    data: sortedMonths.map(m => monthlyData[m].in_progress),
+                    borderColor: '#f39c12',
+                    backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                },
+                {
+                    label: 'Completed',
+                    data: sortedMonths.map(m => monthlyData[m].completed),
+                    borderColor: '#2ecc71',
+                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'bottom', labels: { color: '#999', padding: 8, font: { size: 10 } } }
+            },
+            scales: {
+                x: { display: true, ticks: { color: '#999', font: { size: 9 } } },
+                y: { display: true, ticks: { color: '#999', font: { size: 9 } }, beginAtZero: true }
+            }
+        }
+    });
 }
 
 document.getElementById('mod-status-filter').addEventListener('change', loadMods);
@@ -992,7 +1096,7 @@ document.getElementById('add-mod-btn').addEventListener('click', () => {
                     <input type="date" id="mod-date">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (km)</label>
+                    <label>Mileage (miles)</label>
                     <input type="number" id="mod-mileage">
                 </div>
             </div>
@@ -1039,7 +1143,35 @@ document.getElementById('add-mod-btn').addEventListener('click', () => {
         </form>
     `);
     
-    document.getElementById('mod-form').addEventListener('submit', async (e) => {
+    // Handle status change - disable date for planned mods
+    const modDateInput = document.getElementById('mod-date');
+    const modStatusSelect = document.getElementById('mod-status');
+    
+    const handleStatusChange = (e) => {
+        if (e.target.value === 'planned') {
+            modDateInput.value = '';
+            modDateInput.disabled = true;
+            modDateInput.placeholder = 'N/A for planned mods';
+        } else {
+            modDateInput.disabled = false;
+            modDateInput.placeholder = '';
+        }
+    };
+    
+    modStatusSelect.addEventListener('change', handleStatusChange);
+    // Check initial value
+    if (modStatusSelect.value === 'planned') {
+        modDateInput.disabled = true;
+        modDateInput.placeholder = 'N/A for planned mods';
+    }
+    
+    const form = document.getElementById('mod-form');
+    const oldSubmitHandler = form._submitHandler;
+    if (oldSubmitHandler) {
+        form.removeEventListener('submit', oldSubmitHandler);
+    }
+    
+    const newSubmitHandler = async (e) => {
         e.preventDefault();
         await apiCall('/mods', {
             method: 'POST',
@@ -1057,7 +1189,10 @@ document.getElementById('add-mod-btn').addEventListener('click', () => {
         });
         closeModal();
         loadMods();
-    });
+    };
+    
+    form.addEventListener('submit', newSubmitHandler);
+    form._submitHandler = newSubmitHandler;
 });
 
 async function editMod(id, currentStatus) {
@@ -1079,7 +1214,7 @@ async function editMod(id, currentStatus) {
                     <input type="date" id="mod-edit-date" value="${mod.date || ''}">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (km)</label>
+                    <label>Mileage (miles)</label>
                     <input type="number" id="mod-edit-mileage" value="${mod.mileage || ''}">
                 </div>
             </div>
@@ -1126,7 +1261,35 @@ async function editMod(id, currentStatus) {
         </form>
     `);
     
-    document.getElementById('mod-edit-form').addEventListener('submit', async (e) => {
+    // Handle status change - disable date for planned mods
+    const modEditDateInput = document.getElementById('mod-edit-date');
+    const modEditStatusSelect = document.getElementById('mod-edit-status');
+    
+    const handleEditStatusChange = (e) => {
+        if (e.target.value === 'planned') {
+            modEditDateInput.value = '';
+            modEditDateInput.disabled = true;
+            modEditDateInput.placeholder = 'N/A for planned mods';
+        } else {
+            modEditDateInput.disabled = false;
+            modEditDateInput.placeholder = '';
+        }
+    };
+    
+    modEditStatusSelect.addEventListener('change', handleEditStatusChange);
+    // Check initial value
+    if (modEditStatusSelect.value === 'planned') {
+        modEditDateInput.disabled = true;
+        modEditDateInput.placeholder = 'N/A for planned mods';
+    }
+    
+    const form = document.getElementById('mod-edit-form');
+    const oldSubmitHandler = form._submitHandler;
+    if (oldSubmitHandler) {
+        form.removeEventListener('submit', oldSubmitHandler);
+    }
+    
+    const newSubmitHandler = async (e) => {
         e.preventDefault();
         await apiCall(`/mods/${id}`, {
             method: 'PUT',
@@ -1143,7 +1306,10 @@ async function editMod(id, currentStatus) {
         });
         closeModal();
         loadMods();
-    });
+    };
+    
+    form.addEventListener('submit', newSubmitHandler);
+    form._submitHandler = newSubmitHandler;
 }
 
 async function deleteMod(id) {
@@ -1417,4 +1583,178 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentVehicleId) {
         loadDashboard();
     }
+});
+
+// Settings Functions
+async function loadSettings() {
+    try {
+        const settings = await apiCall('/settings');
+        
+        if (settings.currency_symbol) {
+            document.getElementById('setting-currency').value = settings.currency_symbol;
+        }
+        if (settings.mileage_unit) {
+            document.getElementById('setting-mileage-unit').value = settings.mileage_unit;
+        }
+        if (settings.date_format) {
+            document.getElementById('setting-date-format').value = settings.date_format;
+        }
+        
+        const customSettingsList = document.getElementById('custom-settings-list');
+        const defaultKeys = ['currency_symbol', 'mileage_unit', 'date_format'];
+        const customSettings = Object.entries(settings).filter(([key]) => !defaultKeys.includes(key));
+        
+        if (customSettings.length > 0) {
+            customSettingsList.innerHTML = customSettings.map(([key, value]) => `
+                <div class="custom-setting-item">
+                    <span class="setting-key">${key}</span>
+                    <span class="setting-value">${value}</span>
+                    <button class="btn-danger btn-small" onclick="deleteSetting('${key}')">Delete</button>
+                </div>
+            `).join('');
+        } else {
+            customSettingsList.innerHTML = '<p class="no-settings">No custom settings</p>';
+        }
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+    }
+}
+
+async function saveSetting(key, value) {
+    try {
+        const result = await apiCall('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({ key, value })
+        });
+        if (result.success) {
+            showNotification('Setting saved successfully', 'success');
+        } else {
+            showNotification('Failed to save setting', 'error');
+        }
+    } catch (e) {
+        showNotification('Error saving setting', 'error');
+    }
+}
+
+async function addCustomSetting() {
+    const key = document.getElementById('new-setting-key').value.trim();
+    const value = document.getElementById('new-setting-value').value.trim();
+    
+    if (!key) {
+        showNotification('Setting key is required', 'error');
+        return;
+    }
+    
+    try {
+        const result = await apiCall('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({ key, value })
+        });
+        
+        if (result.success) {
+            document.getElementById('new-setting-key').value = '';
+            document.getElementById('new-setting-value').value = '';
+            loadSettings();
+            showNotification('Setting added successfully', 'success');
+        }
+    } catch (e) {
+        showNotification('Error adding setting', 'error');
+    }
+}
+
+async function deleteSetting(key) {
+    if (!confirm(`Are you sure you want to delete "${key}"?`)) return;
+    
+    try {
+        const result = await apiCall(`/settings/${key}`, { method: 'DELETE' });
+        if (result.success) {
+            loadSettings();
+            showNotification('Setting deleted', 'success');
+        }
+    } catch (e) {
+        showNotification('Error deleting setting', 'error');
+    }
+}
+
+// Export CSV
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('export-csv-btn')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/settings/export');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `muttlogbook_export_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showNotification('Export downloaded successfully', 'success');
+        } catch (e) {
+            showNotification('Export failed', 'error');
+        }
+    });
+    
+    document.getElementById('backup-settings-btn')?.addEventListener('click', async () => {
+        try {
+            const backup = await apiCall('/settings/backup');
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `muttlogbook_settings_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showNotification('Backup downloaded successfully', 'success');
+        } catch (e) {
+            showNotification('Backup failed', 'error');
+        }
+    });
+    
+    document.getElementById('load-data-view-btn')?.addEventListener('click', async () => {
+        try {
+            const vehicles = await apiCall('/vehicles');
+            const maintenance = await apiCall('/maintenance');
+            const mods = await apiCall('/mods');
+            const costs = await apiCall('/costs');
+            
+            const container = document.getElementById('data-view-tables');
+            let html = '';
+            
+            if (vehicles.length > 0) {
+                html += '<div class="data-section"><h4>Vehicles</h4><table><thead><tr><th>ID</th><th>Name</th><th>Make</th><th>Model</th><th>Year</th><th>Mileage</th></tr></thead><tbody>';
+                vehicles.forEach(v => {
+                    html += `<tr><td>${v.id}</td><td>${v.name}</td><td>${v.make}</td><td>${v.model}</td><td>${v.year}</td><td>${v.mileage}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            
+            if (maintenance.length > 0) {
+                html += '<div class="data-section"><h4>Maintenance</h4><table><thead><tr><th>ID</th><th>Vehicle</th><th>Date</th><th>Category</th><th>Cost</th><th>Description</th></tr></thead><tbody>';
+                maintenance.forEach(m => {
+                    html += `<tr><td>${m.id}</td><td>${m.vehicle_id}</td><td>${m.date || ''}</td><td>${m.category || ''}</td><td>${m.cost || 0}</td><td>${(m.description || '').substring(0, 50)}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            
+            if (mods.length > 0) {
+                html += '<div class="data-section"><h4>Mods</h4><table><thead><tr><th>ID</th><th>Vehicle</th><th>Date</th><th>Category</th><th>Status</th><th>Cost</th></tr></thead><tbody>';
+                mods.forEach(m => {
+                    html += `<tr><td>${m.id}</td><td>${m.vehicle_id}</td><td>${m.date || ''}</td><td>${m.category || ''}</td><td>${m.status || ''}</td><td>${m.cost || 0}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            
+            if (costs.length > 0) {
+                html += '<div class="data-section"><h4>Costs</h4><table><thead><tr><th>ID</th><th>Vehicle</th><th>Date</th><th>Category</th><th>Amount</th></tr></thead><tbody>';
+                costs.forEach(c => {
+                    html += `<tr><td>${c.id}</td><td>${c.vehicle_id}</td><td>${c.date || ''}</td><td>${c.category || ''}</td><td>${c.amount || 0}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            
+            container.innerHTML = html || '<p class="no-data">No data available</p>';
+        } catch (e) {
+            showNotification('Failed to load data', 'error');
+        }
+    });
 });

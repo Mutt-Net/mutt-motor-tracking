@@ -13,7 +13,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
-from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder
+from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder, Setting
 from backend.routes import routes
 
 app.register_blueprint(routes, url_prefix='/api')
@@ -64,6 +64,18 @@ with app.app_context():
         db.session.add(default_vehicle)
         db.session.commit()
         print("Created default vehicle: VW EOS")
+    
+    # Create default settings if none exist
+    if not Setting.query.first():
+        default_settings = [
+            Setting(key='currency_symbol', value='£', value_type='string', description='Currency symbol for costs'),
+            Setting(key='mileage_unit', value='miles', value_type='string', description='Default mileage unit'),
+            Setting(key='date_format', value='YYYY-MM-DD', value_type='string', description='Date format preference'),
+        ]
+        for s in default_settings:
+            db.session.add(s)
+        db.session.commit()
+        print("Created default settings")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

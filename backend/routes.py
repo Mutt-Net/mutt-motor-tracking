@@ -1,10 +1,13 @@
 from flask import Blueprint, request, jsonify, send_from_directory
 from backend.extensions import db
-from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder
+from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder, Setting
 from datetime import datetime, timezone
 import json
 import os
 import uuid
+import csv
+import io
+from datetime import datetime
 
 routes = Blueprint('routes', __name__)
 
@@ -910,3 +913,241 @@ def delete_upload(filename):
         os.remove(filepath)
         return jsonify({'success': True})
     return jsonify({'error': 'File not found'}), 404
+
+# Settings Routes
+@routes.route('/settings', methods=['GET'])
+def get_settings():
+    settings = Setting.query.all()
+    result = {}
+    for s in settings:
+        if s.value_type == 'json':
+            result[s.key] = json.loads(s.value) if s.value else None
+        elif s.value_type == 'number':
+            result[s.key] = float(s.value) if s.value else None
+        elif s.value_type == 'boolean':
+            result[s.key] = s.value.lower() == 'true' if s.value else False
+        else:
+            result[s.key] = s.value
+    return jsonify(result)
+
+@routes.route('/settings', methods=['PUT'])
+def update_setting():
+    data = request.json or {}
+    key = data.get('key')
+    if not key:
+        return jsonify({'error': 'Key is required'}), 400
+    
+    value = data.get('value')
+    value_type = data.get('value_type', 'string')
+    description = data.get('description')
+    
+    if value_type == 'json':
+        serialized_value = json.dumps(value) if value is not None else None
+    else:
+        serialized_value = str(value) if value is not None else None
+    
+    setting = Setting.query.filter_by(key=key).first()
+    if setting:
+        setting.value = serialized_value
+        setting.value_type = value_type
+        if description:
+            setting.description = description
+    else:
+        setting = Setting(
+            key=key,
+            value=serialized_value,
+            value_type=value_type,
+            description=description
+        )
+        db.session.add(setting)
+    
+    db.session.commit()
+    
+    # Backup settings to JSON file
+    backup_settings_to_file()
+    
+    return jsonify({'success': True, 'key': key})
+
+@routes.route('/settings/<key>', methods=['PUT'])
+def update_setting_by_key(key):
+    data = request.json or {}
+    value = data.get('value')
+    value_type = data.get('value_type')
+    
+    setting = Setting.query.filter_by(key=key).first()
+    if not setting:
+        setting = Setting(
+            key=key,
+            value=str(value) if value is not None else None,
+            value_type=value_type or 'string',
+            description=data.get('description')
+        )
+        db.session.add(setting)
+    else:
+        if value is not None:
+            if setting.value_type == 'json':
+                setting.value = json.dumps(value)
+            else:
+                setting.value = str(value)
+        if value_type:
+            setting.value_type = value_type
+    
+    db.session.commit()
+    backup_settings_to_file()
+    return jsonify({'success': True})
+
+@routes.route('/settings/<key>', methods=['DELETE'])
+def delete_setting(key):
+    setting = Setting.query.filter_by(key=key).first()
+    if not setting:
+        return jsonify({'error': 'Setting not found'}), 404
+    db.session.delete(setting)
+    db.session.commit()
+    backup_settings_to_file()
+    return jsonify({'success': True})
+
+@routes.route('/settings/export', methods=['GET'])
+def export_all_data():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow(['MuttLogbook Export', datetime.now(timezone.utc).isoformat()])
+    writer.writerow([])
+    
+    # Vehicles
+    writer.writerow(['=== VEHICLES ==='])
+    writer.writerow(['id', 'name', 'reg', 'vin', 'year', 'make', 'model', 'engine', 'transmission', 'mileage'])
+    vehicles = Vehicle.query.all()
+    for v in vehicles:
+        writer.writerow([v.id, v.name, v.reg, v.vin, v.year, v.make, v.model, v.engine, v.transmission, v.mileage])
+    writer.writerow([])
+    
+    # Maintenance
+    writer.writerow(['=== MAINTENANCE ==='])
+    writer.writerow(['id', 'vehicle_id', 'date', 'mileage', 'category', 'description', 'parts_used', 'labor_hours', 'cost', 'shop_name', 'notes'])
+    maintenance = Maintenance.query.all()
+    for m in maintenance:
+        writer.writerow([m.id, m.vehicle_id, m.date, m.mileage, m.category, m.description, m.parts_used, m.labor_hours, m.cost, m.shop_name, m.notes])
+    writer.writerow([])
+    
+    # Mods
+    writer.writerow(['=== MODS ==='])
+    writer.writerow(['id', 'vehicle_id', 'date', 'mileage', 'category', 'description', 'parts', 'cost', 'status', 'notes'])
+    mods = Mod.query.all()
+    for m in mods:
+        writer.writerow([m.id, m.vehicle_id, m.date, m.mileage, m.category, m.description, m.parts, m.cost, m.status, m.notes])
+    writer.writerow([])
+    
+    # Costs
+    writer.writerow(['=== COSTS ==='])
+    writer.writerow(['id', 'vehicle_id', 'date', 'category', 'amount', 'description'])
+    costs = Cost.query.all()
+    for c in costs:
+        writer.writerow([c.id, c.vehicle_id, c.date, c.category, c.amount, c.description])
+    writer.writerow([])
+    
+    # Notes
+    writer.writerow(['=== NOTES ==='])
+    writer.writerow(['id', 'vehicle_id', 'date', 'title', 'content', 'tags'])
+    notes = Note.query.all()
+    for n in notes:
+        writer.writerow([n.id, n.vehicle_id, n.date, n.title, n.content, n.tags])
+    writer.writerow([])
+    
+    # Guides
+    writer.writerow(['=== GUIDES ==='])
+    writer.writerow(['id', 'vehicle_id', 'title', 'category', 'content', 'interval_miles', 'interval_months', 'is_template'])
+    guides = Guide.query.all()
+    for g in guides:
+        writer.writerow([g.id, g.vehicle_id, g.title, g.category, g.content, g.interval_miles, g.interval_months, g.is_template])
+    writer.writerow([])
+    
+    # Fuel Entries
+    writer.writerow(['=== FUEL ENTRIES ==='])
+    writer.writerow(['id', 'vehicle_id', 'date', 'mileage', 'gallons', 'price_per_gallon', 'total_cost', 'station', 'notes'])
+    fuel_entries = FuelEntry.query.all()
+    for f in fuel_entries:
+        writer.writerow([f.id, f.vehicle_id, f.date, f.mileage, f.gallons, f.price_per_gallon, f.total_cost, f.station, f.notes])
+    writer.writerow([])
+    
+    # VCDS Faults
+    writer.writerow(['=== VCDS FAULTS ==='])
+    writer.writerow(['id', 'vehicle_id', 'address', 'component', 'fault_code', 'description', 'status', 'detected_date', 'cleared_date', 'notes'])
+    faults = VCDSFault.query.all()
+    for f in faults:
+        writer.writerow([f.id, f.vehicle_id, f.address, f.component, f.fault_code, f.description, f.status, f.detected_date, f.cleared_date, f.notes])
+    writer.writerow([])
+    
+    # Reminders
+    writer.writerow(['=== REMINDERS ==='])
+    writer.writerow(['id', 'vehicle_id', 'type', 'interval_miles', 'interval_months', 'last_service_date', 'last_service_mileage', 'next_due_date', 'next_due_mileage', 'notes'])
+    reminders = Reminder.query.all()
+    for r in reminders:
+        writer.writerow([r.id, r.vehicle_id, r.type, r.interval_miles, r.interval_months, r.last_service_date, r.last_service_mileage, r.next_due_date, r.next_due_mileage, r.notes])
+    writer.writerow([])
+    
+    # Settings
+    writer.writerow(['=== SETTINGS ==='])
+    writer.writerow(['key', 'value', 'value_type', 'description'])
+    settings = Setting.query.all()
+    for s in settings:
+        writer.writerow([s.key, s.value, s.value_type, s.description])
+    
+    output.seek(0)
+    return send_from_directory(
+        io.BytesIO(output.getvalue().encode('utf-8')),
+        'muttlogbook_export.csv',
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'muttlogbook_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    )
+
+@routes.route('/settings/backup', methods=['GET'])
+def backup_settings():
+    settings = Setting.query.all()
+    result = {}
+    for s in settings:
+        if s.value_type == 'json':
+            result[s.key] = json.loads(s.value) if s.value else None
+        elif s.value_type == 'number':
+            result[s.key] = float(s.value) if s.value else None
+        elif s.value_type == 'boolean':
+            result[s.key] = s.value.lower() == 'true' if s.value else False
+        else:
+            result[s.key] = s.value
+    
+    backup = {
+        'version': '1.0',
+        'exported_at': datetime.now(timezone.utc).isoformat(),
+        'settings': result
+    }
+    
+    return jsonify(backup)
+
+def backup_settings_to_file():
+    try:
+        settings = Setting.query.all()
+        result = {}
+        for s in settings:
+            if s.value_type == 'json':
+                result[s.key] = json.loads(s.value) if s.value else None
+            elif s.value_type == 'number':
+                result[s.key] = float(s.value) if s.value else None
+            elif s.value_type == 'boolean':
+                result[s.key] = s.value.lower() == 'true' if s.value else False
+            else:
+                result[s.key] = s.value
+        
+        backup = {
+            'version': '1.0',
+            'exported_at': datetime.now(timezone.utc).isoformat(),
+            'settings': result
+        }
+        
+        backup_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'instance', 'settings.json')
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        
+        with open(backup_path, 'w') as f:
+            json.dump(backup, f, indent=2)
+    except Exception as e:
+        print(f"Failed to backup settings: {e}")
