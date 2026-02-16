@@ -13,11 +13,27 @@ UPLOAD_FOLDER = os.path.normpath(UPLOAD_FOLDER)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    if not filename or '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    return ext in ALLOWED_EXTENSIONS
 
 def secure_filename_with_ext(filename):
-    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    if not filename or '.' not in filename:
+        ext = ''
+    else:
+        ext = filename.rsplit('.', 1)[1].lower()
     return f"{uuid.uuid4().hex}.{ext}" if ext else f"{uuid.uuid4().hex}"
+
+def validate_filename(filename):
+    if not filename:
+        return False
+    filename = os.path.basename(filename)
+    if '..' in filename or filename.startswith('/') or filename.startswith('\\'):
+        return False
+    if any(c in filename for c in ['\x00', '\n', '\r']):
+        return False
+    return True
 
 SERVICE_INTERVALS = {
     'oil_change': {'miles': 5000, 'months': 6},
@@ -45,6 +61,39 @@ def validate_required(data, required_fields):
         return f"Missing required fields: {', '.join(missing)}"
     return None
 
+def validate_positive_integer(value, field_name):
+    if value is None:
+        return None
+    try:
+        int_val = int(value)
+        if int_val < 0:
+            return f"{field_name} must be a positive integer"
+        return None
+    except (ValueError, TypeError):
+        return f"{field_name} must be a valid integer"
+
+def validate_year(value):
+    if value is None:
+        return None
+    try:
+        year = int(value)
+        if year < 1900 or year > 2100:
+            return "Year must be between 1900 and 2100"
+        return None
+    except (ValueError, TypeError):
+        return "Year must be a valid integer"
+
+def validate_id(value, field_name='ID'):
+    if value is None:
+        return f"{field_name} is required"
+    try:
+        int_val = int(value)
+        if int_val <= 0:
+            return f"{field_name} must be a positive integer"
+        return None
+    except (ValueError, TypeError):
+        return f"{field_name} must be a valid integer"
+
 def serialize_vehicle(v):
     return {
         'id': v.id, 'name': v.name, 'reg': v.reg, 'vin': v.vin, 'year': v.year,
@@ -63,6 +112,14 @@ def add_vehicle():
     error = validate_required(data, [])
     if error:
         return jsonify({'error': error}), 400
+    
+    year_error = validate_year(data.get('year'))
+    if year_error:
+        return jsonify({'error': year_error}), 400
+    
+    mileage_error = validate_positive_integer(data.get('mileage'), 'mileage')
+    if mileage_error:
+        return jsonify({'error': mileage_error}), 400
     
     vehicle = Vehicle(
         name=data.get('name'), reg=data.get('reg'), vin=data.get('vin'), year=data.get('year'),
@@ -88,6 +145,17 @@ def update_vehicle(id):
         return jsonify({'error': 'Vehicle not found'}), 404
     
     data = request.json or {}
+    
+    if 'year' in data:
+        year_error = validate_year(data.get('year'))
+        if year_error:
+            return jsonify({'error': year_error}), 400
+    
+    if 'mileage' in data:
+        mileage_error = validate_positive_integer(data.get('mileage'), 'mileage')
+        if mileage_error:
+            return jsonify({'error': mileage_error}), 400
+    
     for key in ['name', 'reg', 'vin', 'year', 'make', 'model', 'engine', 'transmission', 'mileage']:
         if key in data:
             setattr(vehicle, key, data[key])
@@ -806,25 +874,34 @@ def upload_file():
         return jsonify({'error': 'No file provided'}), 400
     
     file = request.files['file']
-    if file.filename == '':
+    if not file.filename or file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
-    if file and allowed_file(file.filename):
-        filename = secure_filename_with_ext(file.filename)
-        
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
-        
-        return jsonify({'filename': filename, 'url': f'/uploads/{filename}'}), 201
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type'}), 400
     
-    return jsonify({'error': 'Invalid file type'}), 400
+    original_filename = file.filename
+    if not validate_filename(original_filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+    
+    filename = secure_filename_with_ext(original_filename)
+    
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+    
+    return jsonify({'filename': filename, 'url': f'/uploads/{filename}'}), 201
 
 @routes.route('/uploads/<filename>', methods=['GET'])
 def serve_upload(filename):
+    if not validate_filename(filename):
+        return jsonify({'error': 'Invalid filename'}), 400
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 @routes.route('/upload/<filename>', methods=['DELETE'])
 def delete_upload(filename):
+    if not validate_filename(filename):
+        return jsonify({'error': 'Invalid filename'}), 400
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(filepath):
         os.remove(filepath)

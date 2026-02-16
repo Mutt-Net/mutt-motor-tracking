@@ -13,3 +13,8 @@ uploads/
 .coverage
 htmlcov/
 instance/
+*.pem
+*.key
+credentials.json
+config.py
+settings.py

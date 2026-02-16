@@ -25,12 +25,26 @@ def index():
 
 @app.route('/css/<path:filename>')
 def serve_css(filename):
-    with open(os.path.join(basedir, 'frontend', 'css', filename), 'r') as f:
+    if '..' in filename or filename.startswith('/') or filename.startswith('\\'):
+        return 'Forbidden', 403
+    safe_path = os.path.join(basedir, 'frontend', 'css', filename)
+    if not os.path.normpath(safe_path).startswith(os.path.join(basedir, 'frontend', 'css')):
+        return 'Forbidden', 403
+    if not os.path.exists(safe_path):
+        return 'Not Found', 404
+    with open(safe_path, 'r') as f:
         return f.read(), 200, {'Content-Type': 'text/css'}
 
 @app.route('/js/<path:filename>')
 def serve_js(filename):
-    with open(os.path.join(basedir, 'frontend', 'js', filename), 'r') as f:
+    if '..' in filename or filename.startswith('/') or filename.startswith('\\'):
+        return 'Forbidden', 403
+    safe_path = os.path.join(basedir, 'frontend', 'js', filename)
+    if not os.path.normpath(safe_path).startswith(os.path.join(basedir, 'frontend', 'js')):
+        return 'Forbidden', 403
+    if not os.path.exists(safe_path):
+        return 'Not Found', 404
+    with open(safe_path, 'r') as f:
         return f.read(), 200, {'Content-Type': 'application/javascript'}
 
 with app.app_context():
@@ -52,4 +66,4 @@ with app.app_context():
         print("Created default vehicle: VW EOS")
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
