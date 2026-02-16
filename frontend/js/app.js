@@ -98,7 +98,7 @@ async function loadVehicleSelector() {
     const vehicles = await apiCall('/vehicles');
     const select = document.getElementById('vehicle-select');
     select.innerHTML = vehicles.map(v => 
-        `<option value="${v.id}" ${v.id === currentVehicleId ? 'selected' : ''}>${v.make || ''} ${v.model || ''} ${v.reg || ''}</option>`
+        `<option value="${v.id}" ${v.id === currentVehicleId ? 'selected' : ''}>${v.name}</option>`
     ).join('');
     
     const savedVehicle = localStorage.getItem(STORAGE_KEY);
@@ -116,25 +116,14 @@ document.getElementById('vehicle-select').addEventListener('change', (e) => {
     currentVehicleId = parseInt(e.target.value);
     localStorage.setItem(STORAGE_KEY, currentVehicleId);
     loadDashboard();
-    loadOverview();
 });
 
 document.getElementById('add-vehicle-btn').addEventListener('click', () => {
     showModal('Add Vehicle', `
         <form id="new-vehicle-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Make</label>
-                    <input type="text" id="nv-make" required>
-                </div>
-                <div class="form-group">
-                    <label>Model</label>
-                    <input type="text" id="nv-model" required>
-                </div>
-                <div class="form-group">
-                    <label>Reg</label>
-                    <input type="text" id="nv-reg" required>
-                </div>
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="nv-name" required>
             </div>
             <div class="form-group">
                 <label>VIN</label>
@@ -146,7 +135,7 @@ document.getElementById('add-vehicle-btn').addEventListener('click', () => {
                     <input type="number" id="nv-year">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (miles)</label>
+                    <label>Mileage (km)</label>
                     <input type="number" id="nv-mileage" value="0">
                 </div>
             </div>
@@ -169,9 +158,7 @@ document.getElementById('add-vehicle-btn').addEventListener('click', () => {
         const result = await apiCall('/vehicles', {
             method: 'POST',
             body: JSON.stringify({
-                make: document.getElementById('nv-make').value,
-                model: document.getElementById('nv-model').value,
-                reg: document.getElementById('nv-reg').value,
+                name: document.getElementById('nv-name').value,
                 vin: document.getElementById('nv-vin').value || null,
                 year: parseInt(document.getElementById('nv-year').value) || null,
                 mileage: parseInt(document.getElementById('nv-mileage').value) || 0,
@@ -207,8 +194,6 @@ function showView(viewId) {
     switch(viewId) {
         case 'dashboard': loadDashboard(); break;
         case 'vehicle': loadVehicle(); break;
-        case 'profiles': loadProfiles(); break;
-        case 'overview': loadOverview(); break;
         case 'analytics': loadAnalytics(); break;
         case 'maintenance': loadMaintenance(); break;
         case 'mods': loadMods(); break;
@@ -234,7 +219,7 @@ async function loadDashboard() {
     document.getElementById('active-faults').textContent = data.active_faults || 0;
     
     const mileage = vehicle?.mileage || 0;
-    document.getElementById('current-mileage').textContent = `${mileage.toLocaleString()} miles`;
+    document.getElementById('current-mileage').textContent = `${mileage.toLocaleString()} km`;
     document.getElementById('cost-per-mile').textContent = mileage > 0 ? `£${(data.total_spent / mileage).toFixed(2)}` : '£0.00';
     document.getElementById('total-services').textContent = maintenance.length;
     const activeMods = mods.filter(m => m.status === 'in_progress').length;
@@ -378,9 +363,7 @@ async function loadVehicle() {
     const vehicles = await apiCall('/vehicles');
     const vehicle = vehicles.find(v => v.id === currentVehicleId);
     if (vehicle) {
-        document.getElementById('v-make').value = vehicle.make || '';
-        document.getElementById('v-model').value = vehicle.model || '';
-        document.getElementById('v-reg').value = vehicle.reg || '';
+        document.getElementById('v-name').value = vehicle.name || '';
         document.getElementById('v-vin').value = vehicle.vin || '';
         document.getElementById('v-year').value = vehicle.year || '';
         document.getElementById('v-mileage').value = vehicle.mileage || '';
@@ -654,207 +637,11 @@ async function deleteGuide(id) {
     }
 }
 
-async function loadProfiles() {
-    const vehicles = await apiCall('/vehicles');
-    const container = document.getElementById('profiles-list');
-    
-    if (vehicles.length === 0) {
-        container.innerHTML = '<p>No vehicles yet. Add one from the selector above.</p>';
-        return;
-    }
-    
-    container.innerHTML = await Promise.all(vehicles.map(async v => {
-        const [dashboard, maintenance, mods, costs] = await Promise.all([
-            apiCall(`/dashboard?vehicle_id=${v.id}`),
-            apiCall(`/maintenance?vehicle_id=${v.id}`),
-            apiCall(`/mods?vehicle_id=${v.id}`),
-            apiCall(`/costs?vehicle_id=${v.id}`)
-        ]);
-        
-        const activeMods = mods.filter(m => m.status === 'in_progress').length;
-        const plannedMods = mods.filter(m => m.status === 'planned').length;
-        
-        return `
-            <div class="profile-card ${v.id === currentVehicleId ? 'selected' : ''}" onclick="selectVehicle(${v.id})">
-                <div class="profile-card-header">
-                    <h3>${v.make || ''} ${v.model || ''} ${v.reg || ''}</h3>
-                    <div class="profile-card-actions">
-                        <button class="btn-secondary" onclick="event.stopPropagation(); editVehicle(${v.id})">Edit</button>
-                        <button class="btn-danger" onclick="event.stopPropagation(); deleteVehicle(${v.id})">Delete</button>
-                    </div>
-                </div>
-                <div class="profile-info">
-                    <div class="profile-info-item">
-                        <label>VIN</label>
-                        <span>${v.vin || 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Year</label>
-                        <span>${v.year || 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Mileage</label>
-                        <span>${v.mileage ? v.mileage.toLocaleString() + ' miles' : 'N/A'}</span>
-                    </div>
-                    <div class="profile-info-item">
-                        <label>Engine</label>
-                        <span>${v.engine || 'N/A'}</span>
-                    </div>
-                </div>
-                <div class="profile-stats">
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">£${(dashboard.total_spent || 0).toFixed(0)}</div>
-                        <div class="profile-stat-label">Total Spent</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${maintenance.length}</div>
-                        <div class="profile-stat-label">Service Records</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${activeMods}/${mods.length}</div>
-                        <div class="profile-stat-label">Mods Active</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-value">${costs.length}</div>
-                        <div class="profile-stat-label">Expenses</div>
-                    </div>
-                </div>
-                <div class="profile-actions">
-                    <button class="btn-secondary" onclick="event.stopPropagation(); exportVehicle(${v.id})">Export JSON</button>
-                    <button class="btn-secondary" onclick="event.stopPropagation(); importVehicle()">Import</button>
-                </div>
-            </div>
-        `;
-    })).join('');
-}
-
 function selectVehicle(id) {
     currentVehicleId = id;
     localStorage.setItem(STORAGE_KEY, id);
     document.getElementById('vehicle-select').value = id;
-    loadProfiles();
     loadDashboard();
-}
-
-async function loadOverview() {
-    if (!currentVehicleId) return;
-    
-    const vehicles = await apiCall('/vehicles');
-    const vehicle = vehicles.find(v => v.id === currentVehicleId);
-    
-    document.getElementById('overview-vehicle-name').textContent = 
-        vehicle ? `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.reg || ''}` : 'No vehicle selected';
-    
-    const [dashboard, maintenance, mods, costs, vcds, fuel, photos] = await Promise.all([
-        apiCall(`/dashboard?vehicle_id=${currentVehicleId}`),
-        apiCall(`/maintenance?vehicle_id=${currentVehicleId}`),
-        apiCall(`/mods?vehicle_id=${currentVehicleId}`),
-        apiCall(`/costs?vehicle_id=${currentVehicleId}`),
-        apiCall(`/vcds?vehicle_id=${currentVehicleId}`),
-        apiCall(`/fuel?vehicle_id=${currentVehicleId}`),
-        apiCall(`/vehicle-photos?vehicle_id=${currentVehicleId}`)
-    ]);
-    
-    document.getElementById('overview-total-spent').textContent = `£${(dashboard.total_spent || 0).toFixed(0)}`;
-    document.getElementById('overview-service-count').textContent = maintenance.length;
-    const activeMods = mods.filter(m => m.status === 'in_progress').length;
-    document.getElementById('overview-active-mods').textContent = activeMods;
-    const activeFaults = vcds.filter(f => f.status === 'active').length;
-    document.getElementById('overview-active-faults').textContent = activeFaults;
-    
-    document.getElementById('count-images').textContent = photos.length;
-    document.getElementById('count-maintenance').textContent = maintenance.length;
-    document.getElementById('count-mods').textContent = mods.length;
-    document.getElementById('count-costs').textContent = costs.length;
-    document.getElementById('count-vcds').textContent = `${activeFaults} active`;
-    document.getElementById('count-fuel').textContent = fuel.length;
-    
-    const imagesGrid = document.getElementById('overview-images-grid');
-    if (photos.length > 0) {
-        imagesGrid.innerHTML = photos.slice(0, 6).map(p => 
-            `<div class="image-thumb"><img src="/uploads/${p.filename}" alt="Vehicle photo"></div>`
-        ).join('');
-    } else {
-        imagesGrid.innerHTML = '<p class="no-data">No photos yet</p>';
-    }
-    
-    const maintenanceList = document.getElementById('overview-maintenance-list');
-    maintenanceList.innerHTML = maintenance.slice(0, 3).map(m => 
-        `<li><span class="item-date">${m.date || ''}</span> ${m.category || ''}: ${m.description || ''}</li>`
-    ).join('') || '<li class="no-data">No records</li>';
-    
-    const modsList = document.getElementById('overview-mods-list');
-    modsList.innerHTML = mods.slice(0, 3).map(m => 
-        `<li><span class="item-date">${m.date || ''}</span> ${m.description || ''} <span class="badge badge-${m.status}">${m.status}</span></li>`
-    ).join('') || '<li class="no-data">No mods</li>';
-    
-    const costsList = document.getElementById('overview-costs-list');
-    costsList.innerHTML = costs.slice(0, 3).map(c => 
-        `<li><span class="item-date">${c.date || ''}</span> ${c.category || ''}: £${(c.amount || 0).toFixed(2)}</li>`
-    ).join('') || '<li class="no-data">No costs</li>';
-    
-    const vcdsList = document.getElementById('overview-vcds-list');
-    vcdsList.innerHTML = vcds.slice(0, 3).map(f => 
-        `<li><span class="badge badge-${f.status === 'active' ? 'active' : 'cleared'}">${f.status}</span> ${f.fault_code || ''} - ${f.component || ''}</li>`
-    ).join('') || '<li class="no-data">No faults</li>';
-    
-    const fuelList = document.getElementById('overview-fuel-list');
-    fuelList.innerHTML = fuel.slice(0, 3).map(f => 
-        `<li><span class="item-date">${f.date || ''}</span> ${f.gallons || ''} gal - £${(f.total_cost || 0).toFixed(2)}</li>`
-    ).join('') || '<li class="no-data">No fuel entries</li>';
-    
-    document.querySelectorAll('.accordion-item').forEach(item => {
-        item.querySelector('.accordion-header').addEventListener('click', () => {
-            item.classList.toggle('expanded');
-        });
-    });
-    
-    document.querySelectorAll('.view-all-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const target = btn.dataset.target;
-            if (target === 'photos') {
-                showModal('Vehicle Photos', '<p>Photo gallery coming soon</p>');
-            } else {
-                showView(target);
-            }
-        });
-    });
-    
-    document.getElementById('upload-photo-btn')?.addEventListener('click', () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            
-            if (result.filename) {
-                await apiCall('/vehicle-photos', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        vehicle_id: currentVehicleId,
-                        filename: result.filename
-                    })
-                });
-                loadOverview();
-            }
-        };
-        input.click();
-    });
-    
-    document.getElementById('overview-edit-btn')?.addEventListener('click', () => {
-        editVehicle(currentVehicleId);
-    });
 }
 
 async function editVehicle(id) {
@@ -865,19 +652,9 @@ async function editVehicle(id) {
     showModal('Edit Vehicle', `
         <form id="edit-vehicle-form">
             <input type="hidden" id="ev-id" value="${id}">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Make</label>
-                    <input type="text" id="ev-make" value="${v.make || ''}" required>
-                </div>
-                <div class="form-group">
-                    <label>Model</label>
-                    <input type="text" id="ev-model" value="${v.model || ''}" required>
-                </div>
-                <div class="form-group">
-                    <label>Reg</label>
-                    <input type="text" id="ev-reg" value="${v.reg || ''}" required>
-                </div>
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="ev-name" value="${v.name || ''}" required>
             </div>
             <div class="form-group">
                 <label>VIN</label>
@@ -889,7 +666,7 @@ async function editVehicle(id) {
                     <input type="number" id="ev-year" value="${v.year || ''}">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (miles)</label>
+                    <label>Mileage (km)</label>
                     <input type="number" id="ev-mileage" value="${v.mileage || 0}">
                 </div>
             </div>
@@ -912,9 +689,7 @@ async function editVehicle(id) {
         await apiCall(`/api/vehicles/${id}`, {
             method: 'PUT',
             body: JSON.stringify({
-                make: document.getElementById('ev-make').value,
-                model: document.getElementById('ev-model').value,
-                reg: document.getElementById('ev-reg').value,
+                name: document.getElementById('ev-name').value,
                 vin: document.getElementById('ev-vin').value || null,
                 year: parseInt(document.getElementById('ev-year').value) || null,
                 mileage: parseInt(document.getElementById('ev-mileage').value) || 0,
@@ -925,7 +700,6 @@ async function editVehicle(id) {
         closeModal();
         loadVehicleSelector();
         loadProfiles();
-        loadOverview();
     });
 }
 
@@ -981,9 +755,7 @@ function importVehicle() {
 document.getElementById('vehicle-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = {
-        make: document.getElementById('v-make').value,
-        model: document.getElementById('v-model').value,
-        reg: document.getElementById('v-reg').value,
+        name: document.getElementById('v-name').value,
         vin: document.getElementById('v-vin').value,
         year: parseInt(document.getElementById('v-year').value),
         mileage: parseInt(document.getElementById('v-mileage').value),
@@ -1017,7 +789,7 @@ async function loadMaintenance() {
                     <span class="record-date">${r.date || ''}</span>
                     <span class="record-category">${r.category || ''}</span>
                     <span class="record-cost">£${(r.cost || 0).toFixed(2)}</span>
-                    <span>${r.mileage || ''} miles</span>
+                    <span>${r.mileage || ''} km</span>
                 </div>
                 <div class="record-description">${r.description || ''}</div>
                 ${r.notes ? `<div class="record-notes">${r.notes}</div>` : ''}
@@ -1039,7 +811,7 @@ document.getElementById('add-maintenance-btn').addEventListener('click', () => {
                     <input type="date" id="m-date" required>
                 </div>
                 <div class="form-group">
-                    <label>Mileage (miles)</label>
+                    <label>Mileage (km)</label>
                     <input type="number" id="m-mileage">
                 </div>
             </div>
@@ -1130,7 +902,7 @@ async function editMaintenance(id) {
         <form id="maintenance-edit-form">
             <input type="hidden" id="me-id" value="${id}">
             <div class="form-group">
-                <label>Mileage (miles)</label>
+                <label>Mileage (km)</label>
                 <input type="number" id="me-mileage" value="${r.mileage || ''}">
             </div>
             <div class="form-group">
@@ -1220,7 +992,7 @@ document.getElementById('add-mod-btn').addEventListener('click', () => {
                     <input type="date" id="mod-date">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (miles)</label>
+                    <label>Mileage (km)</label>
                     <input type="number" id="mod-mileage">
                 </div>
             </div>
@@ -1307,7 +1079,7 @@ async function editMod(id, currentStatus) {
                     <input type="date" id="mod-edit-date" value="${mod.date || ''}">
                 </div>
                 <div class="form-group">
-                    <label>Mileage (miles)</label>
+                    <label>Mileage (km)</label>
                     <input type="number" id="mod-edit-mileage" value="${mod.mileage || ''}">
                 </div>
             </div>

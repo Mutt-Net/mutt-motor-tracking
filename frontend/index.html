@@ -20,7 +20,6 @@
             <nav>
                 <button class="nav-btn active" data-view="dashboard">Dashboard</button>
                 <button class="nav-btn" data-view="vehicle">Vehicle</button>
-                <button class="nav-btn" data-view="overview">Overview</button>
                 <button class="nav-btn" data-view="analytics">Analytics</button>
                 <button class="nav-btn" data-view="maintenance">Service Log</button>
                 <button class="nav-btn" data-view="mods">Mods</button>
@@ -56,7 +55,7 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Current Mileage</h3>
-                        <p class="stat-value" id="current-mileage">0 miles</p>
+                        <p class="stat-value" id="current-mileage">0 km</p>
                     </div>
                     <div class="stat-card">
                         <h3>Cost/Mile</h3>
@@ -101,32 +100,22 @@
             <section id="vehicle" class="view">
                 <h2>Vehicle Profile</h2>
                 <form id="vehicle-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Make</label>
-                            <input type="text" id="v-make" value="">
-                        </div>
-                        <div class="form-group">
-                            <label>Model</label>
-                            <input type="text" id="v-model" value="">
-                        </div>
-                        <div class="form-group">
-                            <label>Reg</label>
-                            <input type="text" id="v-reg" value="">
-                        </div>
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="v-name" value="VW EOS">
                     </div>
                     <div class="form-group">
                         <label>VIN</label>
-                        <input type="text" id="v-vin" value="">
+                        <input type="text" id="v-vin" value="WVWZZZ1FZ7V033393">
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label>Year</label>
-                            <input type="number" id="v-year" value="">
+                            <input type="number" id="v-year" value="2007">
                         </div>
                         <div class="form-group">
-                            <label>Mileage (miles)</label>
-                            <input type="number" id="v-mileage" value="">
+                            <label>Mileage (km)</label>
+                            <input type="number" id="v-mileage" value="116000">
                         </div>
                     </div>
                     <div class="form-row">
@@ -141,115 +130,6 @@
                     </div>
                     <button type="submit" class="btn-primary">Save Vehicle</button>
                 </form>
-            </section>
-
-            <!-- Overview View -->
-            <section id="overview" class="view">
-                <div id="overview-header" class="overview-header">
-                    <div class="overview-vehicle-info">
-                        <h2 id="overview-vehicle-name">Select a vehicle</h2>
-                        <button class="btn-secondary" id="overview-edit-btn">Edit</button>
-                    </div>
-                </div>
-                <div class="overview-stats">
-                    <div class="overview-stat">
-                        <span class="overview-stat-label">Total Spent</span>
-                        <span class="overview-stat-value" id="overview-total-spent">£0</span>
-                    </div>
-                    <div class="overview-stat">
-                        <span class="overview-stat-label">Service Records</span>
-                        <span class="overview-stat-value" id="overview-service-count">0</span>
-                    </div>
-                    <div class="overview-stat">
-                        <span class="overview-stat-label">Active Mods</span>
-                        <span class="overview-stat-value" id="overview-active-mods">0</span>
-                    </div>
-                    <div class="overview-stat">
-                        <span class="overview-stat-label">Active Faults</span>
-                        <span class="overview-stat-value" id="overview-active-faults">0</span>
-                    </div>
-                </div>
-                <div class="accordion-grid">
-                    <div class="accordion-item" data-tab="images">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">📷</span>
-                            <span class="accordion-title">Images</span>
-                            <span class="accordion-count" id="count-images">0</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <div id="overview-images-grid" class="images-grid"></div>
-                            <button class="btn-secondary btn-small" id="upload-photo-btn">+ Upload Photo</button>
-                            <button class="btn-link view-all-btn" data-target="photos">View All</button>
-                        </div>
-                    </div>
-                    <div class="accordion-item" data-tab="maintenance">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">📋</span>
-                            <span class="accordion-title">Maintenance</span>
-                            <span class="accordion-count" id="count-maintenance">0</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <ul id="overview-maintenance-list" class="overview-list"></ul>
-                            <button class="btn-link view-all-btn" data-target="maintenance">View All</button>
-                        </div>
-                    </div>
-                    <div class="accordion-item" data-tab="mods">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">🔧</span>
-                            <span class="accordion-title">Mods</span>
-                            <span class="accordion-count" id="count-mods">0</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <ul id="overview-mods-list" class="overview-list"></ul>
-                            <button class="btn-link view-all-btn" data-target="mods">View All</button>
-                        </div>
-                    </div>
-                    <div class="accordion-item" data-tab="costs">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">💳</span>
-                            <span class="accordion-title">Costs</span>
-                            <span class="accordion-count" id="count-costs">0</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <ul id="overview-costs-list" class="overview-list"></ul>
-                            <button class="btn-link view-all-btn" data-target="costs">View All</button>
-                        </div>
-                    </div>
-                    <div class="accordion-item" data-tab="vcds">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">⚠️</span>
-                            <span class="accordion-title">VCDS Faults</span>
-                            <span class="accordion-count badge-active" id="count-vcds">0 active</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <ul id="overview-vcds-list" class="overview-list"></ul>
-                            <button class="btn-link view-all-btn" data-target="vcds">View All</button>
-                        </div>
-                    </div>
-                    <div class="accordion-item" data-tab="fuel">
-                        <div class="accordion-header">
-                            <span class="accordion-icon">⛽</span>
-                            <span class="accordion-title">Fuel</span>
-                            <span class="accordion-count" id="count-fuel">0</span>
-                            <span class="accordion-toggle">▼</span>
-                        </div>
-                        <div class="accordion-content">
-                            <ul id="overview-fuel-list" class="overview-list"></ul>
-                            <button class="btn-link view-all-btn" data-target="fuel">View All</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Profiles View -->
-            <section id="profiles" class="view">
-                <h2>Vehicle Profiles</h2>
-                <div id="profiles-list" class="profiles-grid"></div>
             </section>
 
             <!-- Maintenance View -->
