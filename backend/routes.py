@@ -545,7 +545,10 @@ def dashboard():
         return jsonify({'error': 'vehicle_id required'}), 400
     
     total_maintenance = db.session.query(db.func.sum(Maintenance.cost)).filter(Maintenance.vehicle_id == vehicle_id).scalar() or 0
-    total_mods = db.session.query(db.func.sum(Mod.cost)).filter(Mod.vehicle_id == vehicle_id).scalar() or 0
+    total_mods = db.session.query(db.func.sum(Mod.cost)).filter(
+        Mod.vehicle_id == vehicle_id,
+        Mod.status != 'planned'
+    ).scalar() or 0
     total_costs = db.session.query(db.func.sum(Cost.amount)).filter(Cost.vehicle_id == vehicle_id).scalar() or 0
     
     recent_maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id).order_by(Maintenance.date.desc()).limit(5).all()
