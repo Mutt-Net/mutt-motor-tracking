@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
@@ -71,6 +72,21 @@ with app.app_context():
             Setting(key='currency_symbol', value='£', value_type='string', description='Currency symbol for costs'),
             Setting(key='mileage_unit', value='miles', value_type='string', description='Default mileage unit'),
             Setting(key='date_format', value='YYYY-MM-DD', value_type='string', description='Date format preference'),
+            Setting(key='service_intervals', value=json.dumps({
+                'oil_change': {'miles': 5000, 'months': 6},
+                'brakes': {'miles': 20000, 'months': 24},
+                'tire_rotation': {'miles': 7500, 'months': 6},
+                'inspection': {'miles': 15000, 'months': 12},
+                'transmission': {'miles': 30000, 'months': 24},
+                'coolant': {'miles': 30000, 'months': 24},
+                'spark_plugs': {'miles': 30000, 'months': 36},
+                'air_filter': {'miles': 15000, 'months': 12},
+                'fuel_filter': {'miles': 30000, 'months': 24}
+            }), value_type='json', description='Service interval defaults'),
+            Setting(key='total_spend_include_maintenance', value='true', value_type='boolean', description='Include maintenance in total spend'),
+            Setting(key='total_spend_include_mods', value='true', value_type='boolean', description='Include mods in total spend'),
+            Setting(key='total_spend_include_costs', value='true', value_type='boolean', description='Include costs in total spend'),
+            Setting(key='total_spend_include_fuel', value='false', value_type='boolean', description='Include fuel in total spend'),
         ]
         for s in default_settings:
             db.session.add(s)

@@ -48,6 +48,24 @@ const validators = {
     }
 };
 
+function showNotification(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast-notification toast-${type}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    requestAnimationFrame(() => {
+        toast.classList.add('toast-show');
+    });
+    
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+        toast.classList.add('toast-hide');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
 function validateField(value, rules) {
     if (!rules || rules.length === 0) return null;
     for (const rule of rules) {
@@ -118,6 +136,10 @@ document.getElementById('vehicle-select').addEventListener('change', (e) => {
     loadDashboard();
 });
 
+document.querySelector('header h1').addEventListener('click', () => {
+    showView('dashboard');
+});
+
 document.getElementById('add-vehicle-btn').addEventListener('click', () => {
     showModal('Add Vehicle', `
         <form id="new-vehicle-form">
@@ -182,7 +204,15 @@ async function apiCall(endpoint, options = {}) {
             ...options.headers
         }
     });
-    return response.json();
+    const text = await response.text();
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+    }
 }
 
 function showView(viewId) {
@@ -191,6 +221,13 @@ function showView(viewId) {
     document.getElementById(viewId).classList.add('active');
     document.querySelector(`[data-view="${viewId}"]`).classList.add('active');
     
+    if (viewId === 'documentation') {
+        const activeTab = document.querySelector('.doc-tab-btn.active');
+        if (activeTab) {
+            switchDocTab(activeTab.dataset.docTab);
+        }
+    }
+    
     switch(viewId) {
         case 'dashboard': loadDashboard(); break;
         case 'vehicle': loadVehicle(); break;
@@ -198,12 +235,40 @@ function showView(viewId) {
         case 'maintenance': loadMaintenance(); break;
         case 'mods': loadMods(); break;
         case 'costs': loadCosts(); break;
-        case 'guides': loadGuides(); break;
+        case 'documentation': 
+            const activeTab = document.querySelector('.doc-tab-btn.active');
+            if (activeTab) {
+                switchDocTab(activeTab.dataset.docTab);
+            }
+            break;
         case 'notes': loadNotes(); break;
         case 'vcds': loadVCDS(); break;
         case 'settings': loadSettings(); break;
     }
 }
+
+function switchDocTab(tabName) {
+    document.querySelectorAll('.doc-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.docTab === tabName);
+    });
+    document.querySelectorAll('.doc-subview').forEach(subview => {
+        subview.classList.remove('active');
+    });
+    const subview = document.getElementById(`${tabName}-subview`);
+    if (subview) subview.classList.add('active');
+    
+    if (tabName === 'receipts') {
+        loadReceipts();
+    } else if (tabName === 'guides') {
+        loadGuides();
+    } else if (tabName === 'documents') {
+        loadDocuments();
+    }
+}
+
+document.querySelectorAll('.doc-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchDocTab(btn.dataset.docTab));
+});
 
 async function loadDashboard() {
     if (!currentVehicleId) return;
@@ -377,6 +442,7 @@ async function loadAnalytics() {
     if (!currentVehicleId) return;
     
     const dateFilter = document.getElementById('analytics-date-filter')?.value || 'all';
+    const categoryFilter = document.getElementById('analytics-category-filter')?.value || '';
     let startDate = null;
     let endDate = null;
     
@@ -399,6 +465,7 @@ async function loadAnalytics() {
     let url = `/analytics?vehicle_id=${currentVehicleId}`;
     if (startDate) url += `&start_date=${startDate}`;
     if (endDate) url += `&end_date=${endDate}`;
+    if (categoryFilter) url += `&category=${categoryFilter}`;
     
     const data = await apiCall(url);
     
@@ -519,6 +586,204 @@ async function loadGuides() {
     `).join('');
 }
 
+async function loadDocuments() {
+    if (!currentVehicleId) return;
+    
+    const typeFilter = document.getElementById('document-type-filter')?.value || '';
+    let url = `/documents?vehicle_id=${currentVehicleId}`;
+    if (typeFilter) {
+        url += `&document_type=${typeFilter}`;
+    }
+    
+    const documents = await apiCall(url);
+    const container = document.getElementById('documents-list');
+    
+    if (documents.length === 0) {
+        container.innerHTML = '<p>No documents yet. Click "Add Document" to upload one.</p>';
+        return;
+    }
+    
+    container.innerHTML = documents.map(d => `
+        <div class="document-card">
+            <div class="document-header">
+                <h4>${d.title || 'Untitled'}</h4>
+                <span class="document-type">${d.document_type || ''}</span>
+            </div>
+            ${d.description ? `<div class="document-description">${d.description}</div>` : ''}
+            <div class="document-date">${d.upload_date ? new Date(d.upload_date).toLocaleDateString() : ''}</div>
+            ${d.file_path && d.file_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 
+                `<img src="${d.file_path}" alt="${d.title}" class="document-thumbnail" onclick="window.open('${d.file_path}', '_blank')">` : ''}
+            ${d.file_path ? `<button class="btn-secondary document-link" onclick="window.open('${d.file_path}', '_blank')">View File</button>` : ''}
+        </div>
+    `).join('');
+}
+
+async function loadReceipts() {
+    if (!currentVehicleId) return;
+    const categoryFilter = document.getElementById('receipt-category-filter')?.value || '';
+    let url = `/receipts?vehicle_id=${currentVehicleId}`;
+    if (categoryFilter) {
+        url += `&category=${categoryFilter}`;
+    }
+    const receipts = await apiCall(url);
+    const container = document.getElementById('receipts-list');
+    
+    if (receipts.length === 0) {
+        container.innerHTML = '<p>No receipts yet. Click "Add Receipt" to create one.</p>';
+        return;
+    }
+    
+    container.innerHTML = receipts.map(r => `
+        <div class="receipt-card">
+            <div class="receipt-header">
+                <span class="receipt-date">${r.date || ''}</span>
+                <span class="receipt-category">${r.category || ''}</span>
+                <span class="receipt-amount">£${(r.amount || 0).toFixed(2)}</span>
+            </div>
+            <div class="receipt-vendor">${r.vendor || ''}</div>
+            ${r.notes ? `<div class="receipt-notes">${r.notes}</div>` : ''}
+            ${r.thumbnail ? `<div class="receipt-thumbnail"><img src="${r.thumbnail}" alt="Receipt thumbnail" onclick="viewReceiptImage('${r.image_url}')"></div>` : ''}
+            <div class="receipt-link">
+                ${r.maintenance_id ? `<span>Linked to maintenance #${r.maintenance_id}</span>` : ''}
+            </div>
+            <div class="receipt-actions">
+                <button class="btn-secondary" onclick="editReceipt(${r.id})">Edit</button>
+                <button class="btn-danger" onclick="deleteReceipt(${r.id})">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+document.getElementById('receipt-category-filter')?.addEventListener('change', loadReceipts);
+
+function viewReceiptImage(imageUrl) {
+    if (imageUrl) {
+        window.open(imageUrl, '_blank');
+    }
+}
+
+async function showAddReceiptModal(existingReceipt = null) {
+    const isEdit = !!existingReceipt;
+    const title = isEdit ? 'Edit Receipt' : 'Add Receipt';
+    
+    const maintenance = await apiCall(`/maintenance?vehicle_id=${currentVehicleId}`);
+    const maintenanceOptions = maintenance.map(m => 
+        `<option value="${m.id}" ${existingReceipt?.maintenance_id === m.id ? 'selected' : ''}>${m.date || ''} - ${m.description || 'Maintenance #' + m.id}</option>`
+    ).join('');
+    
+    showModal(title, `
+        <form id="receipt-form">
+            ${isEdit ? `<input type="hidden" id="receipt-id" value="${existingReceipt.id}">` : ''}
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="r-date" value="${existingReceipt?.date || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label>Amount (£)</label>
+                    <input type="number" step="0.01" id="r-amount" value="${existingReceipt?.amount || ''}" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Vendor</label>
+                <input type="text" id="r-vendor" value="${existingReceipt?.vendor || ''}" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <select id="r-category" required>
+                    <option value="parts" ${existingReceipt?.category === 'parts' ? 'selected' : ''}>Parts</option>
+                    <option value="labor" ${existingReceipt?.category === 'labor' ? 'selected' : ''}>Labor</option>
+                    <option value="fluids" ${existingReceipt?.category === 'fluids' ? 'selected' : ''}>Fluids</option>
+                    <option value="other" ${existingReceipt?.category === 'other' ? 'selected' : ''}>Other</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="r-notes" rows="3">${existingReceipt?.notes || ''}</textarea>
+            </div>
+            <div class="form-group">
+                <label>Receipt Image (optional)</label>
+                <input type="file" id="r-image" accept="image/*">
+                ${existingReceipt?.thumbnail ? `<p class="form-hint">Current image uploaded</p>` : ''}
+            </div>
+            <div class="form-group">
+                <label>Link to Maintenance *</label>
+                <select id="r-maintenance-id" required>
+                    <option value="">Select maintenance record...</option>
+                    ${maintenanceOptions}
+                </select>
+                <button type="button" class="btn-secondary btn-small" id="create-new-maintenance-btn" style="margin-top: 8px;">+ Create New Maintenance Record</button>
+                <p class="form-hint">You must link this receipt to an existing maintenance record or create a new one.</p>
+            </div>
+            <button type="submit" class="btn-primary">${isEdit ? 'Update' : 'Add'} Receipt</button>
+        </form>
+    `);
+    
+    document.getElementById('create-new-maintenance-btn')?.addEventListener('click', async () => {
+        closeModal();
+        document.getElementById('add-maintenance-btn').click();
+    });
+    
+    document.getElementById('receipt-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const maintenanceId = document.getElementById('r-maintenance-id').value;
+        if (!maintenanceId) {
+            showFieldError(document.getElementById('r-maintenance-id'), 'Please select or create a maintenance record');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('vehicle_id', currentVehicleId);
+        formData.append('date', document.getElementById('r-date').value);
+        formData.append('vendor', document.getElementById('r-vendor').value);
+        formData.append('amount', document.getElementById('r-amount').value);
+        formData.append('category', document.getElementById('r-category').value);
+        formData.append('notes', document.getElementById('r-notes').value || '');
+        formData.append('maintenance_id', maintenanceId);
+        
+        const imageFile = document.getElementById('r-image').files[0];
+        if (imageFile) {
+            formData.append('image', imageFile);
+        }
+        
+        const method = isEdit ? 'PUT' : 'POST';
+        const endpoint = isEdit ? `/receipts/${existingReceipt.id}` : '/receipts';
+        
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: method,
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        closeModal();
+        loadReceipts();
+    });
+}
+
+async function editReceipt(id) {
+    const receipts = await apiCall(`/receipts?vehicle_id=${currentVehicleId}`);
+    const receipt = receipts.find(r => r.id === id);
+    if (!receipt) return;
+    showAddReceiptModal(receipt);
+}
+
+async function deleteReceipt(id) {
+    if (confirm('Delete this receipt?')) {
+        await apiCall(`/receipts/${id}`, { method: 'DELETE' });
+        loadReceipts();
+    }
+}
+
+document.getElementById('add-receipt-btn')?.addEventListener('click', () => {
+    showAddReceiptModal();
+});
+
+document.getElementById('document-type-filter')?.addEventListener('change', loadDocuments);
+
 document.getElementById('guide-category-filter')?.addEventListener('change', loadGuides);
 
 document.getElementById('analytics-date-filter')?.addEventListener('change', (e) => {
@@ -526,6 +791,8 @@ document.getElementById('analytics-date-filter')?.addEventListener('change', (e)
     customDates.style.display = e.target.value === 'custom' ? 'flex' : 'none';
     loadAnalytics();
 });
+
+document.getElementById('analytics-category-filter')?.addEventListener('change', loadAnalytics);
 
 document.getElementById('apply-analytics-filter')?.addEventListener('click', loadAnalytics);
 
@@ -584,6 +851,161 @@ document.getElementById('load-templates-btn')?.addEventListener('click', async (
     await apiCall('/guides/templates', { method: 'POST' });
     loadGuides();
 });
+
+document.getElementById('add-document-btn')?.addEventListener('click', showAddDocumentModal);
+
+async function showAddDocumentModal() {
+    if (!currentVehicleId) {
+        showNotification('Please select a vehicle first', 'error');
+        return;
+    }
+    
+    const maintenanceRecords = await apiCall(`/maintenance?vehicle_id=${currentVehicleId}`);
+    
+    const maintenanceOptions = maintenanceRecords.map(r => 
+        `<option value="${r.id}">${r.date || ''} - ${r.category || ''}: ${r.description || ''}</option>`
+    ).join('');
+    
+    showModal('Add Document', `
+        <form id="document-form">
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" id="doc-title" required>
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="doc-description" rows="3" placeholder="Optional description..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Document Type</label>
+                <select id="doc-type" required>
+                    <option value="">Select type...</option>
+                    <option value="invoice">Invoice</option>
+                    <option value="manual">Manual</option>
+                    <option value="warranty">Warranty</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>File</label>
+                <input type="file" id="doc-file" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx">
+            </div>
+            <div class="form-group">
+                <label>Link to Maintenance Record (Optional)</label>
+                <div class="form-row" style="gap: 0.5rem; align-items: flex-start;">
+                    <select id="doc-maintenance-link" style="flex: 1;">
+                        <option value="">None - No linked record</option>
+                        ${maintenanceOptions}
+                    </select>
+                    <button type="button" class="btn-secondary" id="doc-create-maintenance-btn" style="white-space: nowrap;">Create New</button>
+                </div>
+                <div id="doc-new-maintenance-fields" style="display: none; margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="doc-m-date">
+                        </div>
+                        <div class="form-group">
+                            <label>Mileage</label>
+                            <input type="number" id="doc-m-mileage">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select id="doc-m-category">
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="doc-m-description">
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn-primary">Upload Document</button>
+        </form>
+    `);
+    
+    let newMaintenanceId = null;
+    
+    document.getElementById('doc-create-maintenance-btn')?.addEventListener('click', async () => {
+        const fieldsDiv = document.getElementById('doc-new-maintenance-fields');
+        const btn = document.getElementById('doc-create-maintenance-btn');
+        
+        if (fieldsDiv.style.display === 'none') {
+            fieldsDiv.style.display = 'block';
+            btn.textContent = 'Cancel';
+        } else {
+            fieldsDiv.style.display = 'none';
+            btn.textContent = 'Create New';
+        }
+    });
+    
+    document.getElementById('document-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('doc-file');
+        const maintenanceSelect = document.getElementById('doc-maintenance-link');
+        const newMaintenanceFields = document.getElementById('doc-new-maintenance-fields');
+        
+        const isCreatingNewMaintenance = newMaintenanceFields.style.display !== 'none';
+        
+        if (isCreatingNewMaintenance) {
+            const result = await apiCall('/maintenance', {
+                method: 'POST',
+                body: JSON.stringify({
+                    vehicle_id: currentVehicleId,
+                    date: document.getElementById('doc-m-date').value || null,
+                    mileage: parseInt(document.getElementById('doc-m-mileage').value) || null,
+                    category: document.getElementById('doc-m-category').value || 'other',
+                    description: document.getElementById('doc-m-description').value || null
+                })
+            });
+            newMaintenanceId = result.id;
+        }
+        
+        if (!fileInput.files[0] && !newMaintenanceId && !maintenanceSelect.value) {
+            showNotification('Please upload a file or link to a maintenance record', 'error');
+            return;
+        }
+        
+        if (!fileInput.files[0] && (maintenanceSelect.value || newMaintenanceId)) {
+            closeModal();
+            showNotification('Document created successfully', 'success');
+            loadDocuments();
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('title', document.getElementById('doc-title').value);
+        formData.append('description', document.getElementById('doc-description').value);
+        formData.append('document_type', document.getElementById('doc-type').value);
+        formData.append('vehicle_id', currentVehicleId);
+        
+        if (maintenanceSelect.value) {
+            formData.append('maintenance_id', maintenanceSelect.value);
+        } else if (newMaintenanceId) {
+            formData.append('maintenance_id', newMaintenanceId);
+        }
+        
+        if (fileInput.files[0]) {
+            formData.append('file', fileInput.files[0]);
+        }
+        
+        const response = await fetch(`${API_BASE}/documents`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Upload failed: ${response.statusText}`);
+        }
+        
+        closeModal();
+        loadDocuments();
+        showNotification('Document uploaded successfully', 'success');
+    });
+}
 
 async function editGuide(id) {
     const guides = await apiCall('/guides');
@@ -801,7 +1223,439 @@ async function loadMaintenance() {
             </div>
         </div>
     `).join('') || '<p>No service records yet</p>';
+    
+    await renderMaintenanceTimeline();
+    loadReminders();
 }
+
+async function renderMaintenanceTimeline() {
+    const container = document.getElementById('maintenance-timeline');
+    if (!container || !currentVehicleId) {
+        if (container) container.innerHTML = '';
+        return;
+    }
+    
+    try {
+        const [maintenance, settings, vehicles] = await Promise.all([
+            apiCall(`/maintenance?vehicle_id=${currentVehicleId}`),
+            apiCall('/settings'),
+            apiCall('/vehicles')
+        ]);
+        
+        const vehicle = vehicles.find(v => v.id === currentVehicleId);
+        const currentMileage = vehicle?.mileage || 0;
+        const now = new Date();
+        
+        const defaultIntervals = {
+            'oil_change': { miles: 5000, months: 6 },
+            'brakes': { miles: 20000, months: 24 },
+            'tire_rotation': { miles: 7500, months: 6 },
+            'inspection': { miles: 15000, months: 12 },
+            'transmission': { miles: 30000, months: 24 },
+            'coolant': { miles: 30000, months: 24 },
+            'spark_plugs': { miles: 30000, months: 36 },
+            'air_filter': { miles: 15000, months: 12 },
+            'fuel_filter': { miles: 30000, months: 24 }
+        };
+        
+        const intervals = settings?.service_intervals || defaultIntervals;
+        
+        const serviceTypes = [
+            { key: 'oil_change', label: 'Oil Change' },
+            { key: 'brakes', label: 'Brakes' },
+            { key: 'tire_rotation', label: 'Tire Rotation' },
+            { key: 'inspection', label: 'Inspection' },
+            { key: 'transmission', label: 'Transmission' },
+            { key: 'coolant', label: 'Coolant' },
+            { key: 'spark_plugs', label: 'Spark Plugs' },
+            { key: 'air_filter', label: 'Air Filter' },
+            { key: 'fuel_filter', label: 'Fuel Filter' }
+        ];
+        
+        const serviceData = {};
+        
+        maintenance.forEach(record => {
+            if (!record.date || !record.category) return;
+            const cat = record.category;
+            if (!serviceData[cat]) {
+                serviceData[cat] = [];
+            }
+            serviceData[cat].push({
+                date: new Date(record.date),
+                mileage: record.mileage || 0,
+                description: record.description
+            });
+        });
+        
+        for (const cat of Object.keys(serviceData)) {
+            serviceData[cat].sort((a, b) => a.date - b.date);
+        }
+        
+        const monthsBack = 6;
+        const monthsForward = 6;
+        const startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - monthsBack);
+        startDate.setDate(1);
+        
+        const endDate = new Date(now);
+        endDate.setMonth(endDate.getMonth() + monthsForward);
+        endDate.setDate(0);
+        
+        const totalMonths = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth()) + 1;
+        
+        const monthLabels = [];
+        const currentMonth = new Date(startDate);
+        while (currentMonth <= endDate) {
+            monthLabels.push(currentMonth.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+            currentMonth.setMonth(currentMonth.getMonth() + 1);
+        }
+        
+        function getMonthPosition(date) {
+            const monthsDiff = (date.getFullYear() - startDate.getFullYear()) * 12 + (date.getMonth() - startDate.getMonth());
+            return (monthsDiff / totalMonths) * 100;
+        }
+        
+        function getWidthMonths(startDateBar, endDateBar) {
+            const monthsDiff = (endDateBar.getFullYear() - startDateBar.getFullYear()) * 12 + (endDateBar.getMonth() - startDateBar.getMonth());
+            return Math.max((monthsDiff / totalMonths) * 100, 2);
+        }
+        
+        let html = `
+            <div class="gantt-container">
+                <h3>Service Timeline</h3>
+                <div class="gantt-header">
+                    <div class="gantt-label-header">Service Type</div>
+                    <div class="gantt-time-axis">
+                        ${monthLabels.map(m => `<div class="gantt-month">${m}</div>`).join('')}
+                    </div>
+                </div>
+        `;
+        
+        let hasData = false;
+        
+        for (const serviceType of serviceTypes) {
+            const typeKey = serviceType.key;
+            const interval = intervals[typeKey] || { miles: 0, months: 0 };
+            const recordsForType = serviceData[typeKey] || [];
+            
+            if (recordsForType.length === 0 && interval.miles === 0) continue;
+            
+            html += `
+                <div class="gantt-row">
+                    <div class="gantt-service-label">${serviceType.label}</div>
+                    <div class="gantt-bar-container">
+            `;
+            
+            if (recordsForType.length > 0) {
+                hasData = true;
+                const lastRecord = recordsForType[recordsForType.length - 1];
+                const lastDate = lastRecord.date;
+                const lastMileage = lastRecord.mileage;
+                
+                const nextDueDate = new Date(lastDate);
+                nextDueDate.setMonth(nextDueDate.getMonth() + interval.months);
+                
+                const nextDueMileage = lastMileage + interval.miles;
+                
+                const todayPos = getMonthPosition(now);
+                const lastPos = getMonthPosition(lastDate);
+                const duePos = Math.min(getMonthPosition(nextDueDate), 100);
+                
+                let status = 'completed';
+                let isOverdue = false;
+                
+                if (now > nextDueDate || currentMileage > nextDueMileage) {
+                    status = 'overdue';
+                    isOverdue = true;
+                } else if (nextDueDate - now < 30 * 24 * 60 * 60 * 1000 || nextDueMileage - currentMileage < 1000) {
+                    status = 'upcoming';
+                }
+                
+                const barStart = Math.max(lastPos, 0);
+                const barEnd = isOverdue ? 100 : duePos;
+                const barWidth = Math.max(barEnd - barStart, 3);
+                
+                const barLeft = barStart;
+                const completedWidth = status === 'completed' ? (todayPos - lastPos) : (barWidth * 0.7);
+                
+                if (status === 'completed') {
+                    html += `
+                        <div class="gantt-bar completed" style="left: ${barLeft}%; width: ${completedWidth}%;" title="Last: ${lastDate.toLocaleDateString()}">
+                            ${lastDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+                        </div>
+                    `;
+                } else if (status === 'upcoming') {
+                    html += `
+                        <div class="gantt-bar completed" style="left: ${barLeft}%; width: ${completedWidth}%;" title="Last: ${lastDate.toLocaleDateString()}"></div>
+                        <div class="gantt-bar upcoming" style="left: ${barLeft + completedWidth}%; width: ${barWidth - completedWidth}%;" title="Due: ${nextDueDate.toLocaleDateString()}">
+                            Due ${nextDueDate.toLocaleDateString('en-US', { month: 'short' })}
+                        </div>
+                    `;
+                } else {
+                    const overdueWidth = 100 - (barLeft + completedWidth);
+                    html += `
+                        <div class="gantt-bar completed" style="left: ${barLeft}%; width: ${completedWidth}%;" title="Last: ${lastDate.toLocaleDateString()}"></div>
+                        <div class="gantt-bar overdue" style="left: ${barLeft + completedWidth}%; width: ${overdueWidth}%;" title="Overdue since: ${nextDueDate.toLocaleDateString()}">
+                            OVERDUE
+                        </div>
+                    `;
+                }
+            } else if (interval.miles > 0) {
+                html += `<span class="gantt-bar-empty">No record</span>`;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (!hasData) {
+            html += `
+                <div class="gantt-no-data">
+                    No service records to display. Add maintenance records to see the timeline.
+                </div>
+            `;
+        }
+        
+        html += `
+                <div class="gantt-legend">
+                    <div class="gantt-legend-item">
+                        <div class="gantt-legend-color completed"></div>
+                        <span>Completed</span>
+                    </div>
+                    <div class="gantt-legend-item">
+                        <div class="gantt-legend-color upcoming"></div>
+                        <span>Upcoming</span>
+                    </div>
+                    <div class="gantt-legend-item">
+                        <div class="gantt-legend-color overdue"></div>
+                        <span>Overdue</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error rendering timeline:', error);
+        container.innerHTML = '<p class="gantt-no-data">Unable to load timeline</p>';
+    }
+}
+
+async function loadReminders() {
+    if (!currentVehicleId) return;
+    
+    const filter = document.getElementById('reminder-filter')?.value || '';
+    let url = `/reminders?vehicle_id=${currentVehicleId}`;
+    const reminders = await apiCall(url);
+    const vehicles = await apiCall('/vehicles');
+    const vehicle = vehicles.find(v => v.id === currentVehicleId);
+    const currentMileage = vehicle?.mileage || 0;
+    
+    const filtered = filter ? reminders.filter(r => r.type === filter) : reminders;
+    const container = document.getElementById('reminders-list');
+    
+    if (filtered.length === 0) {
+        container.innerHTML = '<p class="no-data">No reminders set. Click "Add Reminder" to create one.</p>';
+        return;
+    }
+    
+    container.innerHTML = filtered.map(r => {
+        const nextDueDate = r.next_due_date ? new Date(r.next_due_date) : null;
+        const today = new Date();
+        let status = 'upcoming';
+        let statusText = '';
+        
+        if (nextDueDate && nextDueDate < today) {
+            status = 'overdue';
+            statusText = 'OVERDUE';
+        } else if (nextDueDate && (nextDueDate - today) < 30 * 24 * 60 * 60 * 1000) {
+            status = 'due-soon';
+            statusText = 'Due Soon';
+        } else if (r.next_due_mileage && r.next_due_mileage < currentMileage) {
+            status = 'overdue';
+            statusText = 'OVERDUE';
+        } else if (r.next_due_mileage && (r.next_due_mileage - currentMileage) < 1000) {
+            status = 'due-soon';
+            statusText = 'Due Soon';
+        }
+        
+        const typeLabel = SERVICE_INTERVAL_TYPES.find(t => t.key === r.type)?.label || r.type;
+        
+        return `
+            <div class="reminder-item reminder-${status}">
+                <div class="reminder-info">
+                    <div class="reminder-header">
+                        <span class="reminder-type">${typeLabel}</span>
+                        ${statusText ? `<span class="reminder-status">${statusText}</span>` : ''}
+                    </div>
+                    <div class="reminder-details">
+                        ${r.next_due_date ? `<span>Due: ${new Date(r.next_due_date).toLocaleDateString()}</span>` : ''}
+                        ${r.next_due_mileage ? `<span>Due at: ${r.next_due_mileage.toLocaleString()} mi</span>` : ''}
+                    </div>
+                    ${r.notes ? `<div class="reminder-notes">${r.notes}</div>` : ''}
+                    <div class="reminder-interval">
+                        Every ${r.interval_miles?.toLocaleString() || '?'} mi / ${r.interval_months || '?'} mo
+                    </div>
+                </div>
+                <div class="reminder-actions">
+                    <button class="btn-secondary" onclick="editReminder(${r.id})">Edit</button>
+                    <button class="btn-danger" onclick="deleteReminder(${r.id})">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function showAddReminderModal(existingReminder = null) {
+    const isEdit = !!existingReminder;
+    const title = isEdit ? 'Edit Reminder' : 'Add Reminder';
+    
+    const serviceTypeOptions = SERVICE_INTERVAL_TYPES.map(t => 
+        `<option value="${t.key}" ${existingReminder?.type === t.key ? 'selected' : ''}>${t.label}</option>`
+    ).join('') + `<option value="custom" ${existingReminder?.type === 'custom' ? 'selected' : ''}>Custom</option>`;
+    
+    const isCustom = existingReminder?.type === 'custom';
+    
+    showModal(title, `
+        <form id="reminder-form">
+            ${isEdit ? `<input type="hidden" id="reminder-id" value="${existingReminder.id}">` : ''}
+            <div class="form-group">
+                <label>Service Type</label>
+                <select id="reminder-type" required>
+                    <option value="">Select type...</option>
+                    ${serviceTypeOptions}
+                </select>
+            </div>
+            <div class="form-group" id="custom-type-group" style="display: ${isCustom ? 'block' : 'none'};">
+                <label>Custom Type Name</label>
+                <input type="text" id="reminder-custom-type" value="${existingReminder?.notes || ''}" placeholder="e.g. Timing Belt">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Interval (miles)</label>
+                    <input type="number" id="reminder-interval-miles" value="${existingReminder?.interval_miles || ''}" min="0" placeholder="e.g. 5000">
+                </div>
+                <div class="form-group">
+                    <label>Interval (months)</label>
+                    <input type="number" id="reminder-interval-months" value="${existingReminder?.interval_months || ''}" min="0" placeholder="e.g. 6">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Last Service Date</label>
+                    <input type="date" id="reminder-last-date" value="${existingReminder?.last_service_date || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Last Service Mileage</label>
+                    <input type="number" id="reminder-last-mileage" value="${existingReminder?.last_service_mileage || ''}" min="0">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Next Due Date</label>
+                    <input type="date" id="reminder-next-date" value="${existingReminder?.next_due_date || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Next Due Mileage</label>
+                    <input type="number" id="reminder-next-mileage" value="${existingReminder?.next_due_mileage || ''}" min="0">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="reminder-notes" rows="2">${existingReminder?.notes || ''}</textarea>
+            </div>
+            <button type="submit" class="btn-primary">${isEdit ? 'Update' : 'Add'} Reminder</button>
+        </form>
+    `);
+    
+    const typeSelect = document.getElementById('reminder-type');
+    const intervalMilesInput = document.getElementById('reminder-interval-miles');
+    const intervalMonthsInput = document.getElementById('reminder-interval-months');
+    const customTypeGroup = document.getElementById('custom-type-group');
+    
+    if (existingReminder) {
+        typeSelect.value = existingReminder.type;
+    }
+    
+    typeSelect.addEventListener('change', async () => {
+        const selectedType = typeSelect.value;
+        
+        if (selectedType === 'custom') {
+            customTypeGroup.style.display = 'block';
+            intervalMilesInput.value = '';
+            intervalMonthsInput.value = '';
+            return;
+        }
+        
+        customTypeGroup.style.display = 'none';
+        
+        if (!selectedType) return;
+        
+        try {
+            const settings = await apiCall('/settings');
+            const intervals = settings?.service_intervals;
+            if (intervals && intervals[selectedType]) {
+                intervalMilesInput.value = intervals[selectedType].miles || '';
+                intervalMonthsInput.value = intervals[selectedType].months || '';
+            }
+        } catch (e) {
+            console.error('Error loading service intervals:', e);
+        }
+    });
+    
+    document.getElementById('reminder-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const data = {
+            vehicle_id: currentVehicleId,
+            type: document.getElementById('reminder-type').value,
+            interval_miles: parseInt(document.getElementById('reminder-interval-miles').value) || null,
+            interval_months: parseInt(document.getElementById('reminder-interval-months').value) || null,
+            last_service_date: document.getElementById('reminder-last-date').value || null,
+            last_service_mileage: parseInt(document.getElementById('reminder-last-mileage').value) || null,
+            next_due_date: document.getElementById('reminder-next-date').value || null,
+            next_due_mileage: parseInt(document.getElementById('reminder-next-mileage').value) || null,
+            notes: document.getElementById('reminder-notes').value || null
+        };
+        
+        if (isEdit) {
+            await apiCall(`/reminders/${existingReminder.id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        } else {
+            await apiCall('/reminders', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        }
+        
+        closeModal();
+        loadReminders();
+    });
+}
+
+async function editReminder(id) {
+    const reminders = await apiCall(`/reminders?vehicle_id=${currentVehicleId}`);
+    const reminder = reminders.find(r => r.id === id);
+    if (!reminder) return;
+    showAddReminderModal(reminder);
+}
+
+async function deleteReminder(id) {
+    if (!confirm('Delete this reminder?')) return;
+    await apiCall(`/reminders/${id}`, { method: 'DELETE' });
+    loadReminders();
+}
+
+document.getElementById('add-reminder-btn')?.addEventListener('click', () => {
+    showAddReminderModal();
+});
+
+document.getElementById('reminder-filter')?.addEventListener('change', loadReminders);
 
 document.getElementById('add-maintenance-btn').addEventListener('click', () => {
     showModal('Add Service Record', `
@@ -979,9 +1833,7 @@ async function loadMods() {
     if (progressEl) progressEl.textContent = `£${totals.in_progress.toFixed(2)}`;
     if (completedEl) completedEl.textContent = `£${totals.completed.toFixed(2)}`;
     
-    // Load trend chart
-    loadModsTrendChart(mods);
-    
+    // Load mod list
     const list = document.getElementById('mods-list');
     list.innerHTML = filtered.map(m => {
         let partsDisplay = '';
@@ -1010,79 +1862,6 @@ async function loadMods() {
             </div>
         </div>
     `}).join('') || '<p>No mods yet</p>';
-}
-
-async function loadModsTrendChart(mods) {
-    const ctx = document.getElementById('mods-trend-chart');
-    if (!ctx) return;
-    
-    if (window.modsTrendChart) {
-        window.modsTrendChart.destroy();
-    }
-    
-    const monthlyData = {};
-    mods.forEach(m => {
-        if (m.date && m.cost) {
-            const month = m.date.substring(0, 7);
-            if (!monthlyData[month]) {
-                monthlyData[month] = { planned: 0, in_progress: 0, completed: 0 };
-            }
-            monthlyData[month][m.status] = (monthlyData[month][m.status] || 0) + m.cost;
-        }
-    });
-    
-    const sortedMonths = Object.keys(monthlyData).sort();
-    
-    if (sortedMonths.length === 0) {
-        ctx.style.display = 'none';
-        return;
-    }
-    
-    ctx.style.display = 'block';
-    
-    window.modsTrendChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: sortedMonths,
-            datasets: [
-                {
-                    label: 'Planned',
-                    data: sortedMonths.map(m => monthlyData[m].planned),
-                    borderColor: '#888888',
-                    backgroundColor: 'rgba(136, 136, 136, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                },
-                {
-                    label: 'In Progress',
-                    data: sortedMonths.map(m => monthlyData[m].in_progress),
-                    borderColor: '#f39c12',
-                    backgroundColor: 'rgba(243, 156, 18, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                },
-                {
-                    label: 'Completed',
-                    data: sortedMonths.map(m => monthlyData[m].completed),
-                    borderColor: '#2ecc71',
-                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: true, position: 'bottom', labels: { color: '#999', padding: 8, font: { size: 10 } } }
-            },
-            scales: {
-                x: { display: true, ticks: { color: '#999', font: { size: 9 } } },
-                y: { display: true, ticks: { color: '#999', font: { size: 9 } }, beginAtZero: true }
-            }
-        }
-    });
 }
 
 document.getElementById('mod-status-filter').addEventListener('change', loadMods);
@@ -1347,7 +2126,23 @@ async function loadCosts() {
     `).join('') || '<p>No costs recorded</p>';
 }
 
-document.getElementById('add-cost-btn').addEventListener('click', () => {
+document.getElementById('cost-quick-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await apiCall('/costs', {
+        method: 'POST',
+        body: JSON.stringify({
+            vehicle_id: currentVehicleId,
+            date: document.getElementById('qc-date').value,
+            amount: parseFloat(document.getElementById('qc-amount').value),
+            category: document.getElementById('qc-category').value,
+            description: document.getElementById('qc-description').value
+        })
+    });
+    document.getElementById('cost-quick-form').reset();
+    loadCosts();
+});
+
+document.getElementById('add-cost-btn')?.addEventListener('click', () => {
     showModal('Add Expense', `
         <form id="cost-form">
             <div class="form-row">
@@ -1590,6 +2385,10 @@ async function loadSettings() {
     try {
         const settings = await apiCall('/settings');
         
+        if (!settings || typeof settings !== 'object') {
+            throw new Error('Invalid settings data');
+        }
+        
         if (settings.currency_symbol) {
             document.getElementById('setting-currency').value = settings.currency_symbol;
         }
@@ -1600,8 +2399,27 @@ async function loadSettings() {
             document.getElementById('setting-date-format').value = settings.date_format;
         }
         
+        if (settings.service_intervals) {
+            renderServiceIntervalsForm(settings.service_intervals);
+        } else {
+            renderServiceIntervalsForm(null);
+        }
+        
+        if (settings.total_spend_include_maintenance !== undefined) {
+            document.getElementById('setting-total-spend-maintenance').checked = settings.total_spend_include_maintenance;
+        }
+        if (settings.total_spend_include_mods !== undefined) {
+            document.getElementById('setting-total-spend-mods').checked = settings.total_spend_include_mods;
+        }
+        if (settings.total_spend_include_costs !== undefined) {
+            document.getElementById('setting-total-spend-costs').checked = settings.total_spend_include_costs;
+        }
+        if (settings.total_spend_include_fuel !== undefined) {
+            document.getElementById('setting-total-spend-fuel').checked = settings.total_spend_include_fuel;
+        }
+        
         const customSettingsList = document.getElementById('custom-settings-list');
-        const defaultKeys = ['currency_symbol', 'mileage_unit', 'date_format'];
+        const defaultKeys = ['currency_symbol', 'mileage_unit', 'date_format', 'service_intervals', 'total_spend_include_maintenance', 'total_spend_include_mods', 'total_spend_include_costs', 'total_spend_include_fuel'];
         const customSettings = Object.entries(settings).filter(([key]) => !defaultKeys.includes(key));
         
         if (customSettings.length > 0) {
@@ -1617,14 +2435,23 @@ async function loadSettings() {
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
+        showNotification('Failed to load settings: ' + e.message, 'error');
+        const customSettingsList = document.getElementById('custom-settings-list');
+        if (customSettingsList) {
+            customSettingsList.innerHTML = '<p class="no-settings">Unable to load settings</p>';
+        }
     }
 }
 
 async function saveSetting(key, value) {
     try {
+        const payload = { key, value };
+        if (typeof value === 'boolean') {
+            payload.value_type = 'boolean';
+        }
         const result = await apiCall('/settings', {
             method: 'PUT',
-            body: JSON.stringify({ key, value })
+            body: JSON.stringify(payload)
         });
         if (result.success) {
             showNotification('Setting saved successfully', 'success');
@@ -1635,6 +2462,77 @@ async function saveSetting(key, value) {
         showNotification('Error saving setting', 'error');
     }
 }
+
+const SERVICE_INTERVAL_TYPES = [
+    { key: 'oil_change', label: 'Oil Change' },
+    { key: 'brakes', label: 'Brakes' },
+    { key: 'tire_rotation', label: 'Tire Rotation' },
+    { key: 'inspection', label: 'Inspection' },
+    { key: 'transmission', label: 'Transmission' },
+    { key: 'coolant', label: 'Coolant' },
+    { key: 'spark_plugs', label: 'Spark Plugs' },
+    { key: 'air_filter', label: 'Air Filter' },
+    { key: 'fuel_filter', label: 'Fuel Filter' }
+];
+
+function renderServiceIntervalsForm(intervals) {
+    const container = document.getElementById('service-intervals-form');
+    const defaultIntervals = {
+        'oil_change': {'miles': 5000, 'months': 6},
+        'brakes': {'miles': 20000, 'months': 24},
+        'tire_rotation': {'miles': 7500, 'months': 6},
+        'inspection': {'miles': 15000, 'months': 12},
+        'transmission': {'miles': 30000, 'months': 24},
+        'coolant': {'miles': 30000, 'months': 24},
+        'spark_plugs': {'miles': 30000, 'months': 36},
+        'air_filter': {'miles': 15000, 'months': 12},
+        'fuel_filter': {'miles': 30000, 'months': 24}
+    };
+    
+    const data = intervals || defaultIntervals;
+    
+    container.innerHTML = SERVICE_INTERVAL_TYPES.map(type => `
+        <div class="service-interval-item">
+            <label>${type.label}</label>
+            <div class="service-interval-inputs">
+                <input type="number" id="si-${type.key}-miles" value="${data[type.key]?.miles || 0}" min="0" placeholder="Miles">
+                <span>mi</span>
+                <input type="number" id="si-${type.key}-months" value="${data[type.key]?.months || 0}" min="0" placeholder="Months">
+                <span>mo</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('save-service-intervals-btn')?.addEventListener('click', async () => {
+        const serviceIntervals = {};
+        
+        for (const type of SERVICE_INTERVAL_TYPES) {
+            const miles = parseInt(document.getElementById(`si-${type.key}-miles`).value) || 0;
+            const months = parseInt(document.getElementById(`si-${type.key}-months`).value) || 0;
+            serviceIntervals[type.key] = { miles, months };
+        }
+        
+        try {
+            const result = await apiCall('/settings', {
+                method: 'PUT',
+                body: JSON.stringify({ 
+                    key: 'service_intervals', 
+                    value: serviceIntervals,
+                    value_type: 'json'
+                })
+            });
+            if (result.success) {
+                showNotification('Service intervals saved successfully', 'success');
+            } else {
+                showNotification('Failed to save service intervals', 'error');
+            }
+        } catch (e) {
+            showNotification('Error saving service intervals', 'error');
+        }
+    });
+});
 
 async function addCustomSetting() {
     const key = document.getElementById('new-setting-key').value.trim();

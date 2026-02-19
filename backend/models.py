@@ -18,6 +18,7 @@ class Vehicle(db.Model):
     engine = db.Column(db.String(100))
     transmission = db.Column(db.String(50))
     mileage = db.Column(db.Integer, default=0)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
     
     maintenance = db.relationship('Maintenance', backref='vehicle', lazy=True, cascade='all, delete-orphan')
@@ -29,6 +30,7 @@ class Vehicle(db.Model):
     photos = db.relationship('VehiclePhoto', backref='vehicle', lazy=True, cascade='all, delete-orphan')
     fuel_entries = db.relationship('FuelEntry', backref='vehicle', lazy=True, cascade='all, delete-orphan')
     reminders = db.relationship('Reminder', backref='vehicle', lazy=True, cascade='all, delete-orphan')
+    receipts = db.relationship('Receipt', backref='vehicle', lazy=True, cascade='all, delete-orphan')
 
 class Maintenance(db.Model):
     __tablename__ = 'maintenance'
@@ -44,6 +46,7 @@ class Maintenance(db.Model):
     cost = db.Column(db.Float)
     shop_name = db.Column(db.String(100))
     notes = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Mod(db.Model):
@@ -59,6 +62,7 @@ class Mod(db.Model):
     cost = db.Column(db.Float)
     status = db.Column(db.String(20), default='planned')
     notes = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Cost(db.Model):
@@ -70,6 +74,7 @@ class Cost(db.Model):
     category = db.Column(db.String(50))
     amount = db.Column(db.Float)
     description = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Note(db.Model):
@@ -81,6 +86,7 @@ class Note(db.Model):
     title = db.Column(db.String(200))
     content = db.Column(db.Text)
     tags = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class VCDSFault(db.Model):
@@ -96,6 +102,7 @@ class VCDSFault(db.Model):
     detected_date = db.Column(db.Date)
     cleared_date = db.Column(db.Date)
     notes = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Guide(db.Model):
@@ -133,6 +140,7 @@ class FuelEntry(db.Model):
     total_cost = db.Column(db.Float)
     station = db.Column(db.String(100))
     notes = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Reminder(db.Model):
@@ -148,6 +156,7 @@ class Reminder(db.Model):
     next_due_date = db.Column(db.Date)
     next_due_mileage = db.Column(db.Integer)
     notes = db.Column(db.Text)
+    test_key = db.Column(db.String(50), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
 class Setting(db.Model):
@@ -160,3 +169,32 @@ class Setting(db.Model):
     description = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=utc_now)
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+
+class ServiceDocument(db.Model):
+    __tablename__ = 'service_documents'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id', ondelete='CASCADE'), nullable=False)
+    maintenance_id = db.Column(db.Integer, db.ForeignKey('maintenance.id', ondelete='SET NULL'), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    document_type = db.Column(db.String(50))
+    filename = db.Column(db.String(255))
+    test_key = db.Column(db.String(50), nullable=True, index=True)
+    uploaded_at = db.Column(db.DateTime, default=utc_now)
+
+
+class Receipt(db.Model):
+    __tablename__ = 'receipts'
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id', ondelete='CASCADE'), nullable=False)
+    maintenance_id = db.Column(db.Integer, db.ForeignKey('maintenance.id', ondelete='SET NULL'), nullable=True)
+    date = db.Column(db.Date)
+    vendor = db.Column(db.String(200))
+    amount = db.Column(db.Float)
+    category = db.Column(db.String(50))
+    notes = db.Column(db.Text)
+    filename = db.Column(db.String(255))
+    test_key = db.Column(db.String(50), nullable=True, index=True)
+    uploaded_at = db.Column(db.DateTime, default=utc_now)

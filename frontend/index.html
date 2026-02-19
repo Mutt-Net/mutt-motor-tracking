@@ -24,7 +24,7 @@
                 <button class="nav-btn" data-view="maintenance">Service Log</button>
                 <button class="nav-btn" data-view="mods">Mods</button>
                 <button class="nav-btn" data-view="costs">Costs</button>
-                <button class="nav-btn" data-view="guides">Guides</button>
+                <button class="nav-btn" data-view="documentation">Documentation</button>
                 <button class="nav-btn" data-view="notes">Notes</button>
                 <button class="nav-btn" data-view="vcds">VCDS Faults</button>
                 <button class="nav-btn" data-view="settings">Settings</button>
@@ -137,6 +137,27 @@
             <section id="maintenance" class="view">
                 <h2>Service Log</h2>
                 <button class="btn-primary" id="add-maintenance-btn">Add Service Record</button>
+                <div id="maintenance-timeline" class="gantt-timeline"></div>
+                <div id="reminders-section">
+                    <h3>Reminders</h3>
+                    <div class="reminders-toolbar">
+                        <button class="btn-primary" id="add-reminder-btn">Add Reminder</button>
+                        <select id="reminder-filter">
+                            <option value="">All Types</option>
+                            <option value="oil_change">Oil Change</option>
+                            <option value="brakes">Brakes</option>
+                            <option value="tire_rotation">Tire Rotation</option>
+                            <option value="inspection">Inspection</option>
+                            <option value="transmission">Transmission</option>
+                            <option value="coolant">Coolant</option>
+                            <option value="spark_plugs">Spark Plugs</option>
+                            <option value="air_filter">Air Filter</option>
+                            <option value="fuel_filter">Fuel Filter</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="reminders-list" class="reminders-list"></div>
+                </div>
                 <div id="maintenance-list" class="record-list"></div>
             </section>
 
@@ -158,10 +179,6 @@
                         <div class="mod-summary-card completed">
                             <h3>Completed</h3>
                             <div class="mod-summary-value" id="mod-completed-total">£0.00</div>
-                        </div>
-                        <div class="mod-summary-card chart-half">
-                            <h3>Cost Trend</h3>
-                            <canvas id="mods-trend-chart"></canvas>
                         </div>
                         <div class="mod-summary-card add-card">
                             <h3>Quick Add</h3>
@@ -210,12 +227,48 @@
             <!-- Costs View -->
             <section id="costs" class="view">
                 <h2>Cost Tracking</h2>
-                <button class="btn-primary" id="add-cost-btn">Add Expense</button>
-                <div class="cost-summary">
-                    <h3>Spending by Category</h3>
-                    <div id="cost-breakdown"></div>
+                <div class="cost-layout">
+                    <div class="cost-form-column">
+                        <div class="cost-form-container">
+                            <h3>Add Cost</h3>
+                            <form id="cost-quick-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Date</label>
+                                        <input type="date" id="qc-date" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Amount (£)</label>
+                                        <input type="number" step="0.01" id="qc-amount" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Category</label>
+                                    <select id="qc-category">
+                                        <option value="maintenance">Maintenance</option>
+                                        <option value="mods">Mods</option>
+                                        <option value="insurance">Insurance</option>
+                                        <option value="fuel">Fuel</option>
+                                        <option value="tax">Tax</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Description</label>
+                                    <input type="text" id="qc-description">
+                                </div>
+                                <button type="submit" class="btn-primary">Add Expense</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="cost-summary-column">
+                        <div class="cost-summary">
+                            <h3>Spending by Category</h3>
+                            <div id="cost-breakdown"></div>
+                        </div>
+                        <div id="costs-list" class="record-list"></div>
+                    </div>
                 </div>
-                <div id="costs-list" class="record-list"></div>
             </section>
 
             <!-- Notes View -->
@@ -229,6 +282,26 @@
             <section id="analytics" class="view">
                 <h2>Analytics</h2>
                 <div class="analytics-toolbar">
+                    <select id="analytics-category-filter">
+                        <option value="">All Categories</option>
+                        <option value="oil_change">Oil Change</option>
+                        <option value="brakes">Brakes</option>
+                        <option value="tire_rotation">Tire Rotation</option>
+                        <option value="inspection">Inspection</option>
+                        <option value="transmission">Transmission</option>
+                        <option value="coolant">Coolant</option>
+                        <option value="spark_plugs">Spark Plugs</option>
+                        <option value="air_filter">Air Filter</option>
+                        <option value="fuel_filter">Fuel Filter</option>
+                        <option value="engine">Engine (Mods)</option>
+                        <option value="suspension">Suspension (Mods)</option>
+                        <option value="exhaust">Exhaust (Mods)</option>
+                        <option value="interior">Interior (Mods)</option>
+                        <option value="exterior">Exterior (Mods)</option>
+                        <option value="wheels">Wheels (Mods)</option>
+                        <option value="other">Other</option>
+                        <option value="fuel">Fuel</option>
+                    </select>
                     <select id="analytics-date-filter">
                         <option value="all">All Time</option>
                         <option value="6months">Last 6 Months</option>
@@ -263,20 +336,53 @@
                 </div>
             </section>
 
-            <!-- Guides View -->
-            <section id="guides" class="view">
-                <h2>Guides & Workflows</h2>
-                <div class="guides-toolbar">
-                    <button class="btn-primary" id="add-guide-btn">Add Guide</button>
-                    <button class="btn-secondary" id="load-templates-btn">Load Templates</button>
-                    <select id="guide-category-filter">
-                        <option value="">All Categories</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="howto">How-To</option>
-                        <option value="mods">Mods</option>
-                    </select>
+            <!-- Documentation View -->
+            <section id="documentation" class="view">
+                <h2>Documentation</h2>
+                <div class="doc-tabs">
+                    <button class="doc-tab-btn active" data-doc-tab="guides">Guides</button>
+                    <button class="doc-tab-btn" data-doc-tab="documents">Documents</button>
+                    <button class="doc-tab-btn" data-doc-tab="receipts">Receipts</button>
                 </div>
-                <div id="guides-list" class="guides-grid"></div>
+                <div id="guides-subview" class="doc-subview active">
+                    <div class="guides-toolbar">
+                        <button class="btn-primary" id="add-guide-btn">Add Guide</button>
+                        <button class="btn-secondary" id="load-templates-btn">Load Templates</button>
+                        <select id="guide-category-filter">
+                            <option value="">All Categories</option>
+                            <option value="maintenance">Maintenance</option>
+                            <option value="howto">How-To</option>
+                            <option value="mods">Mods</option>
+                        </select>
+                    </div>
+                    <div id="guides-list" class="guides-grid"></div>
+                </div>
+                <div id="documents-subview" class="doc-subview">
+                    <div class="documents-toolbar">
+                        <button class="btn-primary" id="add-document-btn">Add Document</button>
+                        <select id="document-type-filter">
+                            <option value="">All Types</option>
+                            <option value="invoice">Invoice</option>
+                            <option value="manual">Manual</option>
+                            <option value="warranty">Warranty</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div id="documents-list" class="documents-grid"></div>
+                </div>
+                <div id="receipts-subview" class="doc-subview">
+                    <div class="receipts-toolbar">
+                        <button class="btn-primary" id="add-receipt-btn">Add Receipt</button>
+                        <select id="receipt-category-filter">
+                            <option value="">All Categories</option>
+                            <option value="parts">Parts</option>
+                            <option value="labor">Labor</option>
+                            <option value="fluids">Fluids</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div id="receipts-list" class="receipts-grid"></div>
+                </div>
             </section>
             <section id="vcds" class="view">
                 <h2>VCDS Fault Codes</h2>
@@ -318,6 +424,48 @@
                                     <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                                 </select>
                                 <button class="btn-secondary btn-small" onclick="saveSetting('date_format', document.getElementById('setting-date-format').value)">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Service Intervals</h3>
+                        <p class="setting-description">Set default service interval reminders (miles and months)</p>
+                        <div id="service-intervals-form" class="service-intervals-grid"></div>
+                        <button class="btn-primary" id="save-service-intervals-btn">Save Service Intervals</button>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Total Spend</h3>
+                        <p class="setting-description">Choose which categories to include in total spend calculations</p>
+                        <div class="settings-grid">
+                            <div class="setting-item checkbox-item">
+                                <label>
+                                    <input type="checkbox" id="setting-total-spend-maintenance" checked>
+                                    Include Maintenance
+                                </label>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('total_spend_include_maintenance', document.getElementById('setting-total-spend-maintenance').checked)">Save</button>
+                            </div>
+                            <div class="setting-item checkbox-item">
+                                <label>
+                                    <input type="checkbox" id="setting-total-spend-mods" checked>
+                                    Include Mods
+                                </label>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('total_spend_include_mods', document.getElementById('setting-total-spend-mods').checked)">Save</button>
+                            </div>
+                            <div class="setting-item checkbox-item">
+                                <label>
+                                    <input type="checkbox" id="setting-total-spend-costs" checked>
+                                    Include Other Costs
+                                </label>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('total_spend_include_costs', document.getElementById('setting-total-spend-costs').checked)">Save</button>
+                            </div>
+                            <div class="setting-item checkbox-item">
+                                <label>
+                                    <input type="checkbox" id="setting-total-spend-fuel">
+                                    Include Fuel
+                                </label>
+                                <button class="btn-secondary btn-small" onclick="saveSetting('total_spend_include_fuel', document.getElementById('setting-total-spend-fuel').checked)">Save</button>
                             </div>
                         </div>
                     </div>

@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, MuttMain]
+  pull_request:
+    branches: [main, MuttMain]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests with coverage
+      run: |
+        pytest backend/tests/ --cov=backend --cov-report=xml --cov-report=html --cov-report=term-missing -v
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage.xml
+        directory: ./htmlcov
+        flags: unittests
+        name: mutt-logbook
+    
+    - name: Fail if coverage is below 95%
+      run: |
+        pytest backend/tests/ --cov=backend --cov-fail-under=95 -q
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Check syntax
+      run: |
+        python -m py_compile backend/app.py
+        python -m py_compile backend/routes.py
+        python -m py_compile backend/models.py
+        python -m py_compile backend/extensions.py

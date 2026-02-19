@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory, send_file, current_app
 from backend.extensions import db
-from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder, Setting
-from datetime import datetime, timezone
+from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, Guide, VehiclePhoto, FuelEntry, Reminder, Setting, Receipt, ServiceDocument
+from datetime import datetime, timezone, timedelta
+from dateutil.relativedelta import relativedelta
 import json
 import os
 import uuid
@@ -13,7 +14,7 @@ routes = Blueprint('routes', __name__)
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
 UPLOAD_FOLDER = os.path.normpath(UPLOAD_FOLDER)
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf'}
 
 def allowed_file(filename):
     if not filename or '.' not in filename:
@@ -27,6 +28,12 @@ def secure_filename_with_ext(filename):
     else:
         ext = filename.rsplit('.', 1)[1].lower()
     return f"{uuid.uuid4().hex}.{ext}" if ext else f"{uuid.uuid4().hex}"
+
+def get_setting_value(key, default=False):
+    setting = Setting.query.filter_by(key=key).first()
+    if setting and setting.value:
+        return setting.value.lower() == 'true'
+    return default
 
 def validate_filename(filename):
     if not filename:
@@ -49,6 +56,82 @@ SERVICE_INTERVALS = {
     'air_filter': {'miles': 15000, 'months': 12},
     'fuel_filter': {'miles': 30000, 'months': 24}
 }
+
+def get_service_intervals():
+    setting = Setting.query.filter_by(key='service_intervals').first()
+    if setting and setting.value:
+        try:
+            return json.loads(setting.value)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return SERVICE_INTERVALS
+
+
+def calculate_service_status(next_due_date, next_due_mileage, current_mileage):
+    today = datetime.now(timezone.utc).date()
+    
+    if next_due_date and (next_due_date < today):
+        return 'overdue'
+    if next_due_mileage and current_mileage and (next_due_mileage < current_mileage):
+        return 'overdue'
+    
+    if next_due_date and next_due_date <= today + timedelta(days=30):
+        return 'upcoming'
+    if next_due_mileage and current_mileage and (next_due_mileage <= current_mileage + 1000):
+        return 'upcoming'
+    
+    return 'ok'
+
+
+def calculate_maintenance_timeline(vehicle_id, current_mileage):
+    service_intervals = get_service_intervals()
+    timeline = []
+    today = datetime.now(timezone.utc).date()
+    
+    for service_type, intervals in service_intervals.items():
+        interval_months = intervals.get('months', 0)
+        interval_miles = intervals.get('miles', 0)
+        
+        rec = Maintenance.query.filter_by(
+            vehicle_id=vehicle_id, 
+            category=service_type
+        ).order_by(Maintenance.date.desc()).first()
+        
+        last_service_date = rec.date if rec and rec.date else None
+        last_service_mileage = rec.mileage if rec and rec.mileage else None
+        
+        next_due_date = None
+        if last_service_date and interval_months:
+            next_due_date = last_service_date + relativedelta(months=interval_months)
+        
+        next_due_mileage = None
+        if last_service_mileage and interval_miles:
+            next_due_mileage = last_service_mileage + interval_miles
+        
+        days_until_due = None
+        if next_due_date:
+            days_until_due = (next_due_date - today).days
+        
+        miles_until_due = None
+        if next_due_mileage and current_mileage:
+            miles_until_due = next_due_mileage - current_mileage
+        
+        status = calculate_service_status(next_due_date, next_due_mileage, current_mileage)
+        
+        timeline.append({
+            'service_type': service_type,
+            'last_service_date': last_service_date.isoformat() if last_service_date else None,
+            'last_service_mileage': last_service_mileage,
+            'next_due_date': next_due_date.isoformat() if next_due_date else None,
+            'next_due_mileage': next_due_mileage,
+            'status': status,
+            'days_until_due': days_until_due,
+            'miles_until_due': miles_until_due,
+            'interval_months': interval_months,
+            'interval_miles': interval_miles
+        })
+    
+    return timeline
 
 def parse_date(date_str):
     if not date_str:
@@ -308,6 +391,28 @@ def delete_maintenance(id):
     db.session.commit()
     return jsonify({'success': True})
 
+
+@routes.route('/maintenance/timeline', methods=['GET'])
+def get_maintenance_timeline():
+    vehicle_id = request.args.get('vehicle_id')
+    if not vehicle_id:
+        return jsonify({'error': 'vehicle_id required'}), 400
+    
+    try:
+        vehicle_id = int(vehicle_id)
+    except ValueError:
+        return jsonify({'error': 'Invalid vehicle_id'}), 400
+    
+    vehicle = db.session.get(Vehicle, vehicle_id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    current_mileage = vehicle.mileage or 0
+    timeline = calculate_maintenance_timeline(vehicle_id, current_mileage)
+    
+    return jsonify(timeline)
+
+
 @routes.route('/mods', methods=['GET'])
 def get_mods():
     vehicle_id = request.args.get('vehicle_id')
@@ -510,33 +615,123 @@ def import_vcds():
 
 @routes.route('/vcds/parse', methods=['POST'])
 def parse_vcds():
+    import re
+    
     content = request.json.get('content', '')
     faults = []
     
-    lines = content.strip().split('\n')
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('---') or 'Address' in line or 'Component' in line:
+    address_pattern = re.compile(r'^Address\s+(\d+):\s*(.+)$', re.MULTILINE | re.IGNORECASE)
+    fault_code_pattern = re.compile(r'^(\d{5})\s*-\s*(.+?)$', re.MULTILINE)
+    description_pattern = re.compile(r'^\s*(\d+)\s*-\s*(.+)$', re.MULTILINE)
+    no_fault_pattern = re.compile(r'No fault code found', re.IGNORECASE)
+    cannot_reach_pattern = re.compile(r'Cannot be reached', re.IGNORECASE)
+    
+    blocks = re.split(r'(?=^Address\s+\d+:)', content, flags=re.MULTILINE)
+    
+    has_address_block = False
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        if address_pattern.match(block):
+            has_address_block = True
+            break
+    
+    if not has_address_block:
+        simple_address_pattern = re.compile(r'^(\d+)\s+(.+)$', re.MULTILINE)
+        simple_fault_pattern = re.compile(r'^(\d{5})\s+(.+)$', re.MULTILINE)
+        
+        lines = content.strip().split('\n')
+        address = ''
+        module = ''
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            addr_match = simple_address_pattern.match(line)
+            if addr_match and not simple_fault_pattern.match(line):
+                address = addr_match.group(1)
+                module = addr_match.group(2).strip()
+                continue
+            
+            fault_match = simple_fault_pattern.match(line)
+            if fault_match and address:
+                faults.append({
+                    'address': address,
+                    'module': module,
+                    'fault_code': fault_match.group(1),
+                    'description': fault_match.group(2).strip(),
+                    'status': 'Fault'
+                })
+        
+        return jsonify(faults)
+    
+    for block in blocks:
+        block = block.strip()
+        if not block:
             continue
         
-        parts = line.split()
-        if len(parts) >= 2:
-            address = parts[0] if parts[0][0].isdigit() else None
-            fault_code = None
-            component = None
-            
-            for i, p in enumerate(parts):
-                if len(p) == 5 and p.isdigit():
-                    fault_code = p
-                    component = ' '.join(parts[i+1:]) if i+1 < len(parts) else ''
-                    break
-            
-            if address or fault_code:
+        addr_match = address_pattern.match(block)
+        if not addr_match:
+            continue
+        
+        address = addr_match.group(1)
+        module_name = re.sub(r'\s+Labels?[:\.].*$', '', addr_match.group(2)).strip()
+        
+        block_lines = block.split('\n')
+        body = '\n'.join(block_lines[1:]).strip()
+        
+        if cannot_reach_pattern.search(body):
+            faults.append({
+                'address': address,
+                'module': module_name,
+                'fault_code': '',
+                'description': '',
+                'status': 'Unreachable'
+            })
+        elif no_fault_pattern.search(body):
+            faults.append({
+                'address': address,
+                'module': module_name,
+                'fault_code': '',
+                'description': '',
+                'status': 'OK'
+            })
+        else:
+            fault_matches = fault_code_pattern.findall(body)
+            if fault_matches:
+                for fault_code, fault_desc in fault_matches:
+                    desc_lines = []
+                    for line in body.split('\n'):
+                        if fault_code in line:
+                            continue
+                        if fault_desc.lower() in line.lower():
+                            parts = line.strip().split(None, 1)
+                            if len(parts) > 1:
+                                desc_lines.append(parts[1])
+                    
+                    description = fault_desc
+                    if not desc_lines:
+                        desc_match = description_pattern.search(body)
+                        if desc_match:
+                            description = desc_match.group(2).strip()
+                    
+                    faults.append({
+                        'address': address,
+                        'module': module_name,
+                        'fault_code': fault_code,
+                        'description': description,
+                        'status': 'Fault'
+                    })
+            else:
                 faults.append({
-                    'address': address or '',
-                    'fault_code': fault_code or '',
-                    'component': component,
-                    'description': ''
+                    'address': address,
+                    'module': module_name,
+                    'fault_code': '',
+                    'description': '',
+                    'status': 'Unknown'
                 })
     
     return jsonify(faults)
@@ -547,21 +742,37 @@ def dashboard():
     if not vehicle_id:
         return jsonify({'error': 'vehicle_id required'}), 400
     
-    total_maintenance = db.session.query(db.func.sum(Maintenance.cost)).filter(Maintenance.vehicle_id == vehicle_id).scalar() or 0
-    total_mods = db.session.query(db.func.sum(Mod.cost)).filter(
-        Mod.vehicle_id == vehicle_id,
-        Mod.status != 'planned'
-    ).scalar() or 0
-    total_costs = db.session.query(db.func.sum(Cost.amount)).filter(Cost.vehicle_id == vehicle_id).scalar() or 0
+    include_maintenance = get_setting_value('total_spend_include_maintenance', True)
+    include_mods = get_setting_value('total_spend_include_mods', True)
+    include_costs = get_setting_value('total_spend_include_costs', True)
+    include_fuel = get_setting_value('total_spend_include_fuel', False)
+    
+    total_maintenance = 0
+    total_mods = 0
+    total_costs = 0
+    total_fuel = 0
+    
+    if include_maintenance:
+        total_maintenance = db.session.query(db.func.sum(Maintenance.cost)).filter(Maintenance.vehicle_id == vehicle_id).scalar() or 0
+    if include_mods:
+        total_mods = db.session.query(db.func.sum(Mod.cost)).filter(
+            Mod.vehicle_id == vehicle_id,
+            Mod.status != 'planned'
+        ).scalar() or 0
+    if include_costs:
+        total_costs = db.session.query(db.func.sum(Cost.amount)).filter(Cost.vehicle_id == vehicle_id).scalar() or 0
+    if include_fuel:
+        total_fuel = db.session.query(db.func.sum(FuelEntry.cost)).filter(FuelEntry.vehicle_id == vehicle_id).scalar() or 0
     
     recent_maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id).order_by(Maintenance.date.desc()).limit(5).all()
     active_faults = VCDSFault.query.filter_by(vehicle_id=vehicle_id, status='active').count()
     
     return jsonify({
-        'total_spent': total_maintenance + total_mods + total_costs,
+        'total_spent': total_maintenance + total_mods + total_costs + total_fuel,
         'maintenance_cost': total_maintenance,
         'mods_cost': total_mods,
         'other_costs': total_costs,
+        'fuel_cost': total_fuel,
         'recent_maintenance': [{
             'date': m.date.isoformat() if m.date else None, 'category': m.category, 'description': m.description
         } for m in recent_maintenance],
@@ -573,13 +784,20 @@ def analytics():
     vehicle_id = request.args.get('vehicle_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    category = request.args.get('category')
     
     if not vehicle_id:
         return jsonify({'error': 'vehicle_id required'}), 400
     
+    include_maintenance = get_setting_value('total_spend_include_maintenance', True)
+    include_mods = get_setting_value('total_spend_include_mods', True)
+    include_costs = get_setting_value('total_spend_include_costs', True)
+    include_fuel = get_setting_value('total_spend_include_fuel', False)
+    
     maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id)
-    mods = Mod.query.filter_by(vehicle_id=vehicle_id)
+    mods = Mod.query.filter_by(vehicle_id=vehicle_id).filter(Mod.status != 'planned')
     costs = Cost.query.filter_by(vehicle_id=vehicle_id)
+    fuel_entries = FuelEntry.query.filter_by(vehicle_id=vehicle_id)
     
     if start_date:
         start = parse_date(start_date)
@@ -587,6 +805,7 @@ def analytics():
             maintenance = maintenance.filter(Maintenance.date >= start)
             mods = mods.filter(Mod.date >= start)
             costs = costs.filter(Cost.date >= start)
+            fuel_entries = fuel_entries.filter(FuelEntry.date >= start)
     
     if end_date:
         end = parse_date(end_date)
@@ -594,44 +813,68 @@ def analytics():
             maintenance = maintenance.filter(Maintenance.date <= end)
             mods = mods.filter(Mod.date <= end)
             costs = costs.filter(Cost.date <= end)
+            fuel_entries = fuel_entries.filter(FuelEntry.date <= end)
     
     maintenance = maintenance.order_by(Maintenance.date).all()
     mods = mods.order_by(Mod.date).all()
     costs = costs.order_by(Cost.date).all()
+    fuel_entries = fuel_entries.order_by(FuelEntry.date).all()
     
     monthly_spending = {}
     category_spending = {}
     yearly_spending = {}
     
-    for m in maintenance:
-        if m.date and m.cost:
-            key = m.date.strftime('%Y-%m')
-            monthly_spending[key] = monthly_spending.get(key, 0) + m.cost
-            year = m.date.strftime('%Y')
-            yearly_spending[year] = yearly_spending.get(year, 0) + m.cost
-            cat = m.category or 'other'
-            category_spending[cat] = category_spending.get(cat, 0) + m.cost
+    if include_maintenance:
+        for m in maintenance:
+            if category and m.category != category:
+                continue
+            if m.date and m.cost:
+                key = m.date.strftime('%Y-%m')
+                monthly_spending[key] = monthly_spending.get(key, 0) + m.cost
+                year = m.date.strftime('%Y')
+                yearly_spending[year] = yearly_spending.get(year, 0) + m.cost
+                cat = m.category or 'other'
+                category_spending[cat] = category_spending.get(cat, 0) + m.cost
     
-    for c in costs:
-        if c.date and c.amount:
-            key = c.date.strftime('%Y-%m')
-            monthly_spending[key] = monthly_spending.get(key, 0) + c.amount
-            year = c.date.strftime('%Y')
-            yearly_spending[year] = yearly_spending.get(year, 0) + c.amount
-            cat = c.category or 'other'
-            category_spending[cat] = category_spending.get(cat, 0) + c.amount
+    if include_costs:
+        for c in costs:
+            if category and c.category != category:
+                continue
+            if c.date and c.amount:
+                key = c.date.strftime('%Y-%m')
+                monthly_spending[key] = monthly_spending.get(key, 0) + c.amount
+                year = c.date.strftime('%Y')
+                yearly_spending[year] = yearly_spending.get(year, 0) + c.amount
+                cat = c.category or 'other'
+                category_spending[cat] = category_spending.get(cat, 0) + c.amount
     
-    for mod in mods:
-        if mod.date and mod.cost:
-            key = mod.date.strftime('%Y-%m')
-            monthly_spending[key] = monthly_spending.get(key, 0) + mod.cost
-            year = mod.date.strftime('%Y')
-            yearly_spending[year] = yearly_spending.get(year, 0) + mod.cost
+    if include_mods:
+        for mod in mods:
+            if category and mod.category != category:
+                continue
+            if mod.date and mod.cost:
+                key = mod.date.strftime('%Y-%m')
+                monthly_spending[key] = monthly_spending.get(key, 0) + mod.cost
+                year = mod.date.strftime('%Y')
+                yearly_spending[year] = yearly_spending.get(year, 0) + mod.cost
+    
+    if include_fuel:
+        for f in fuel_entries:
+            if category and category != 'fuel':
+                continue
+            if f.date and f.cost:
+                key = f.date.strftime('%Y-%m')
+                monthly_spending[key] = monthly_spending.get(key, 0) + f.cost
+                year = f.date.strftime('%Y')
+                yearly_spending[year] = yearly_spending.get(year, 0) + f.cost
+                cat = 'fuel'
+                category_spending[cat] = category_spending.get(cat, 0) + f.cost
     
     total_spent = sum(monthly_spending.values())
     
     last_service = {}
-    for cat in SERVICE_INTERVALS:
+    service_intervals = get_service_intervals()
+    for cat in service_intervals:
         rec = Maintenance.query.filter_by(vehicle_id=vehicle_id, category=cat).order_by(Maintenance.date.desc()).first()
         if rec and rec.mileage:
             last_service[cat] = {'date': rec.date.isoformat() if rec.date else None, 'mileage': rec.mileage}
@@ -639,14 +882,17 @@ def analytics():
     vehicle = db.session.get(Vehicle, vehicle_id)
     current_mileage = vehicle.mileage if vehicle else 0
     
+    timeline = calculate_maintenance_timeline(vehicle_id, current_mileage)
+    
     return jsonify({
         'monthly_spending': monthly_spending,
         'yearly_spending': yearly_spending,
         'category_spending': category_spending,
         'total_spent': total_spent,
-        'service_intervals': SERVICE_INTERVALS,
+        'service_intervals': service_intervals,
         'last_service': last_service,
-        'current_mileage': current_mileage
+        'current_mileage': current_mileage,
+        'timeline': timeline
     })
 
 @routes.route('/guides', methods=['GET'])
@@ -874,6 +1120,64 @@ def delete_reminder(id):
     db.session.commit()
     return jsonify({'success': True})
 
+@routes.route('/receipts', methods=['GET'])
+def get_receipts():
+    vehicle_id = request.args.get('vehicle_id')
+    maintenance_id = request.args.get('maintenance_id')
+    query = Receipt.query
+    if vehicle_id:
+        query = query.filter_by(vehicle_id=vehicle_id)
+    if maintenance_id:
+        query = query.filter_by(maintenance_id=maintenance_id)
+    receipts = query.order_by(Receipt.date.desc()).all()
+    return jsonify([{
+        'id': r.id, 'vehicle_id': r.vehicle_id, 'maintenance_id': r.maintenance_id,
+        'date': r.date.isoformat() if r.date else None, 'vendor': r.vendor,
+        'amount': r.amount, 'category': r.category, 'notes': r.notes,
+        'filename': r.filename, 'uploaded_at': r.uploaded_at.isoformat() if r.uploaded_at else None
+    } for r in receipts])
+
+@routes.route('/receipts', methods=['POST'])
+def add_receipt():
+    data = request.json or {}
+    error = validate_required(data, ['vehicle_id'])
+    if error:
+        return jsonify({'error': error}), 400
+    
+    receipt = Receipt(
+        vehicle_id=data.get('vehicle_id'), maintenance_id=data.get('maintenance_id'),
+        date=parse_date(data.get('date')), vendor=data.get('vendor'),
+        amount=data.get('amount'), category=data.get('category'),
+        notes=data.get('notes'), filename=data.get('filename')
+    )
+    db.session.add(receipt)
+    db.session.commit()
+    return jsonify({'id': receipt.id}), 201
+
+@routes.route('/receipts/<int:id>', methods=['PUT'])
+def update_receipt(id):
+    receipt = db.session.get(Receipt, id)
+    if not receipt:
+        return jsonify({'error': 'Receipt not found'}), 404
+    
+    data = request.json or {}
+    for key in ['vehicle_id', 'maintenance_id', 'vendor', 'amount', 'category', 'notes', 'filename']:
+        if key in data:
+            setattr(receipt, key, data[key])
+    if 'date' in data:
+        receipt.date = parse_date(data['date'])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/receipts/<int:id>', methods=['DELETE'])
+def delete_receipt(id):
+    receipt = db.session.get(Receipt, id)
+    if not receipt:
+        return jsonify({'error': 'Receipt not found'}), 404
+    db.session.delete(receipt)
+    db.session.commit()
+    return jsonify({'success': True})
+
 @routes.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -914,21 +1218,120 @@ def delete_upload(filename):
         return jsonify({'success': True})
     return jsonify({'error': 'File not found'}), 404
 
+# Service Document Routes
+@routes.route('/documents', methods=['GET'])
+def get_documents():
+    vehicle_id = request.args.get('vehicle_id')
+    query = ServiceDocument.query
+    if vehicle_id:
+        query = query.filter_by(vehicle_id=vehicle_id)
+    documents = query.order_by(ServiceDocument.uploaded_at.desc()).all()
+    return jsonify([{
+        'id': d.id, 'vehicle_id': d.vehicle_id, 'maintenance_id': d.maintenance_id,
+        'title': d.title, 'description': d.description, 'document_type': d.document_type,
+        'filename': d.filename, 'uploaded_at': d.uploaded_at.isoformat() if d.uploaded_at else None
+    } for d in documents])
+
+@routes.route('/documents', methods=['POST'])
+def upload_document():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if not file.filename or file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type'}), 400
+    
+    original_filename = file.filename
+    if not validate_filename(original_filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+    
+    vehicle_id = request.form.get('vehicle_id')
+    if not vehicle_id:
+        return jsonify({'error': 'vehicle_id is required'}), 400
+    
+    try:
+        vehicle_id = int(vehicle_id)
+    except ValueError:
+        return jsonify({'error': 'Invalid vehicle_id'}), 400
+    
+    vehicle = db.session.get(Vehicle, vehicle_id)
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    
+    maintenance_id = request.form.get('maintenance_id')
+    if maintenance_id:
+        try:
+            maintenance_id = int(maintenance_id)
+        except ValueError:
+            maintenance_id = None
+    
+    title = request.form.get('title')
+    if not title:
+        title = original_filename
+    
+    description = request.form.get('description')
+    document_type = request.form.get('document_type')
+    
+    filename = secure_filename_with_ext(original_filename)
+    
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+    
+    document = ServiceDocument(
+        vehicle_id=vehicle_id,
+        maintenance_id=maintenance_id,
+        title=title,
+        description=description,
+        document_type=document_type,
+        filename=filename
+    )
+    db.session.add(document)
+    db.session.commit()
+    
+    return jsonify({
+        'id': document.id,
+        'filename': filename,
+        'url': f'/uploads/{filename}'
+    }), 201
+
+@routes.route('/documents/<int:id>', methods=['DELETE'])
+def delete_document(id):
+    document = db.session.get(ServiceDocument, id)
+    if not document:
+        return jsonify({'error': 'Document not found'}), 404
+    
+    if document.filename:
+        filepath = os.path.join(UPLOAD_FOLDER, document.filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    
+    db.session.delete(document)
+    db.session.commit()
+    return jsonify({'success': True})
+
 # Settings Routes
 @routes.route('/settings', methods=['GET'])
 def get_settings():
-    settings = Setting.query.all()
-    result = {}
-    for s in settings:
-        if s.value_type == 'json':
-            result[s.key] = json.loads(s.value) if s.value else None
-        elif s.value_type == 'number':
-            result[s.key] = float(s.value) if s.value else None
-        elif s.value_type == 'boolean':
-            result[s.key] = s.value.lower() == 'true' if s.value else False
-        else:
-            result[s.key] = s.value
-    return jsonify(result)
+    try:
+        settings = Setting.query.all()
+        result = {}
+        for s in settings:
+            if s.value_type == 'json':
+                result[s.key] = json.loads(s.value) if s.value else None
+            elif s.value_type == 'number':
+                result[s.key] = float(s.value) if s.value else None
+            elif s.value_type == 'boolean':
+                result[s.key] = s.value.lower() == 'true' if s.value else False
+            else:
+                result[s.key] = s.value
+        return jsonify(result)
+    except Exception as e:
+        current_app.logger.error(f'Error loading settings: {e}')
+        return jsonify({'error': 'Failed to load settings'}), 500
 
 @routes.route('/settings', methods=['PUT'])
 def update_setting():
@@ -1086,6 +1489,22 @@ def export_all_data():
         writer.writerow([r.id, r.vehicle_id, r.type, r.interval_miles, r.interval_months, r.last_service_date, r.last_service_mileage, r.next_due_date, r.next_due_mileage, r.notes])
     writer.writerow([])
     
+    # Service Documents
+    writer.writerow(['=== SERVICE DOCUMENTS ==='])
+    writer.writerow(['id', 'vehicle_id', 'maintenance_id', 'title', 'description', 'document_type', 'filename', 'uploaded_at'])
+    service_docs = ServiceDocument.query.all()
+    for sd in service_docs:
+        writer.writerow([sd.id, sd.vehicle_id, sd.maintenance_id, sd.title, sd.description, sd.document_type, sd.filename, sd.uploaded_at])
+    writer.writerow([])
+    
+    # Receipts
+    writer.writerow(['=== RECEIPTS ==='])
+    writer.writerow(['id', 'vehicle_id', 'maintenance_id', 'date', 'vendor', 'amount', 'category', 'notes', 'filename', 'uploaded_at'])
+    receipts = Receipt.query.all()
+    for r in receipts:
+        writer.writerow([r.id, r.vehicle_id, r.maintenance_id, r.date, r.vendor, r.amount, r.category, r.notes, r.filename, r.uploaded_at])
+    writer.writerow([])
+    
     # Settings
     writer.writerow(['=== SETTINGS ==='])
     writer.writerow(['key', 'value', 'value_type', 'description'])
@@ -1094,9 +1513,8 @@ def export_all_data():
         writer.writerow([s.key, s.value, s.value_type, s.description])
     
     output.seek(0)
-    return send_from_directory(
+    return send_file(
         io.BytesIO(output.getvalue().encode('utf-8')),
-        'muttlogbook_export.csv',
         mimetype='text/csv',
         as_attachment=True,
         download_name=f'muttlogbook_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
@@ -1151,3 +1569,127 @@ def backup_settings_to_file():
             json.dump(backup, f, indent=2)
     except Exception as e:
         print(f"Failed to backup settings: {e}")
+
+
+@routes.route('/settings/test-mode', methods=['PUT'])
+def update_test_mode():
+    """Enable or disable test mode and manage test keys."""
+    data = request.json or {}
+    enabled = data.get('enabled')
+    include_data = data.get('include_test_data', False)
+    
+    if enabled is not None:
+        setting = Setting.query.filter_by(key='test_mode_enabled').first()
+        if setting:
+            setting.value = 'true' if enabled else 'false'
+        else:
+            setting = Setting(
+                key='test_mode_enabled',
+                value='true' if enabled else 'false',
+                value_type='boolean',
+                description='Enable test mode to filter test data'
+            )
+            db.session.add(setting)
+        db.session.commit()
+    
+    if include_data is not None:
+        setting = Setting.query.filter_by(key='include_test_data').first()
+        if setting:
+            setting.value = 'true' if include_data else 'false'
+        else:
+            setting = Setting(
+                key='include_test_data',
+                value='true' if include_data else 'false',
+                value_type='boolean',
+                description='Include test data in analytics and reports'
+            )
+            db.session.add(setting)
+        db.session.commit()
+    
+    backup_settings_to_file()
+    return jsonify({'success': True})
+
+
+@routes.route('/settings/test-mode', methods=['GET'])
+def get_test_mode():
+    """Get current test mode settings."""
+    enabled = get_setting_value('test_mode_enabled', False)
+    include_data = get_setting_value('include_test_data', False)
+    
+    test_key_setting = Setting.query.filter_by(key='test_key').first()
+    test_key = test_key_setting.value if test_key_setting else None
+    
+    return jsonify({
+        'enabled': enabled,
+        'include_test_data': include_data,
+        'test_key': test_key
+    })
+
+
+@routes.route('/settings/test-key', methods=['POST'])
+def generate_test_key():
+    """Generate a new test key for data isolation."""
+    import uuid
+    new_key = f'test_{uuid.uuid4().hex[:12]}'
+    
+    setting = Setting.query.filter_by(key='test_key').first()
+    if setting:
+        setting.value = new_key
+    else:
+        setting = Setting(
+            key='test_key',
+            value=new_key,
+            value_type='string',
+            description='Test data isolation key'
+        )
+        db.session.add(setting)
+    
+    db.session.commit()
+    backup_settings_to_file()
+    return jsonify({'test_key': new_key})
+
+
+@routes.route('/settings/test-data/count', methods=['GET'])
+def get_test_data_count():
+    """Get count of records marked as test data."""
+    from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, FuelEntry, Reminder, Receipt, ServiceDocument
+    
+    counts = {
+        'vehicles': Vehicle.query.filter(Vehicle.test_key.isnot(None)).count(),
+        'maintenance': Maintenance.query.filter(Maintenance.test_key.isnot(None)).count(),
+        'mods': Mod.query.filter(Mod.test_key.isnot(None)).count(),
+        'costs': Cost.query.filter(Cost.test_key.isnot(None)).count(),
+        'notes': Note.query.filter(Note.test_key.isnot(None)).count(),
+        'vcds_faults': VCDSFault.query.filter(VCDSFault.test_key.isnot(None)).count(),
+        'fuel_entries': FuelEntry.query.filter(FuelEntry.test_key.isnot(None)).count(),
+        'reminders': Reminder.query.filter(Reminder.test_key.isnot(None)).count(),
+        'receipts': Receipt.query.filter(Receipt.test_key.isnot(None)).count(),
+        'documents': ServiceDocument.query.filter(ServiceDocument.test_key.isnot(None)).count()
+    }
+    counts['total'] = sum(counts.values())
+    
+    return jsonify(counts)
+
+
+@routes.route('/settings/test-data', methods=['DELETE'])
+def clear_test_data():
+    """Delete all records marked as test data."""
+    from backend.models import Vehicle, Maintenance, Mod, Cost, Note, VCDSFault, FuelEntry, Reminder, Receipt, ServiceDocument
+    
+    deleted = {
+        'vehicles': Vehicle.query.filter(Vehicle.test_key.isnot(None)).delete(),
+        'maintenance': Maintenance.query.filter(Maintenance.test_key.isnot(None)).delete(),
+        'mods': Mod.query.filter(Mod.test_key.isnot(None)).delete(),
+        'costs': Cost.query.filter(Cost.test_key.isnot(None)).delete(),
+        'notes': Note.query.filter(Note.test_key.isnot(None)).delete(),
+        'vcds_faults': VCDSFault.query.filter(VCDSFault.test_key.isnot(None)).delete(),
+        'fuel_entries': FuelEntry.query.filter(FuelEntry.test_key.isnot(None)).delete(),
+        'reminders': Reminder.query.filter(Reminder.test_key.isnot(None)).delete(),
+        'receipts': Receipt.query.filter(Receipt.test_key.isnot(None)).delete(),
+        'documents': ServiceDocument.query.filter(ServiceDocument.test_key.isnot(None)).delete()
+    }
+    deleted['total'] = sum(deleted.values())
+    
+    db.session.commit()
+    
+    return jsonify({'deleted': deleted})
