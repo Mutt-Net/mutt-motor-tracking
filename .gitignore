@@ -18,3 +18,5 @@ instance/
 credentials.json
 config.py
 settings.py
+TESTING_SESSION.md
+coverage.json

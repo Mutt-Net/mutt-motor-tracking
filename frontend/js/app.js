@@ -2290,42 +2290,309 @@ async function loadVCDS() {
 
 document.getElementById('import-vcds-btn').addEventListener('click', () => {
     showModal('Import VCDS Faults', `
-        <p>Paste VCDS scan results below (one fault per line):</p>
-        <textarea id="vcds-paste" class="vcds-input" placeholder="08 Auto HVAC 00819 High Pressure Sensor&#10;19 CAN Gateway 03582 Radio no signal"></textarea>
-        <button class="btn-primary" onclick="parseVCDS()">Parse</button>
+        <div class="vcds-import-tabs">
+            <button class="vcds-tab active" data-tab="paste">Paste Text</button>
+            <button class="vcds-tab" data-tab="file">Upload File</button>
+            <button class="vcds-tab" data-tab="manual">Manual Entry</button>
+        </div>
+        
+        <div id="vcds-tab-paste" class="vcds-tab-content">
+            <p>Paste VCDS scan results below:</p>
+            <textarea id="vcds-paste" class="vcds-input" placeholder="08 Auto HVAC&#10;00819 High Pressure Sensor&#10;&#10;19 CAN Gateway&#10;03582 Radio no signal"></textarea>
+            <button class="btn-primary" onclick="parseVCDS()">Parse</button>
+        </div>
+        
+        <div id="vcds-tab-file" class="vcds-tab-content" style="display:none;">
+            <p>Upload a text file (.txt) or CSV file (.csv):</p>
+            <input type="file" id="vcds-file" accept=".txt,.csv" class="vcds-file-input">
+            <div id="vcds-file-preview" class="vcds-file-preview"></div>
+            <button class="btn-primary" onclick="parseVCDSFile()">Parse File</button>
+        </div>
+        
+        <div id="vcds-tab-manual" class="vcds-tab-content" style="display:none;">
+            <p>Enter fault details manually:</p>
+            <form id="vcds-manual-form" class="vcds-manual-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Address</label>
+                        <input type="text" id="vcds-manual-address" placeholder="e.g., 08" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Module</label>
+                        <input type="text" id="vcds-manual-module" placeholder="e.g., Auto HVAC">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Fault Code</label>
+                        <input type="text" id="vcds-manual-code" placeholder="e.g., 00819">
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="vcds-manual-status">
+                            <option value="Fault">Fault</option>
+                            <option value="OK">OK</option>
+                            <option value="Unreachable">Unreachable</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="vcds-manual-description" placeholder="e.g., High Pressure Sensor">
+                </div>
+                <button type="button" class="btn-secondary" onclick="addManualVCDS()">Add Fault</button>
+            </form>
+            <div id="vcds-manual-list" class="vcds-manual-list"></div>
+            <button class="btn-primary" id="vcds-import-manual-btn" style="display:none;" onclick="importManualVCDS()">Import All</button>
+        </div>
+        
         <div id="vcds-preview"></div>
     `);
+    
+    document.querySelectorAll('.vcds-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.vcds-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.vcds-tab-content').forEach(c => c.style.display = 'none');
+            tab.classList.add('active');
+            document.getElementById(`vcds-tab-${tab.dataset.tab}`).style.display = 'block';
+        });
+    });
 });
 
-async function parseVCDS() {
-    const content = document.getElementById('vcds-paste').value;
-    const faults = await apiCall('/api/vcds/parse', {
-        method: 'POST',
-        body: JSON.stringify({ content })
+let manualVCDS = [];
+
+function addManualVCDS() {
+    const address = document.getElementById('vcds-manual-address').value.trim();
+    const module = document.getElementById('vcds-manual-module').value.trim();
+    const code = document.getElementById('vcds-manual-code').value.trim();
+    const status = document.getElementById('vcds-manual-status').value;
+    const description = document.getElementById('vcds-manual-description').value.trim();
+    
+    if (!address || !code) {
+        showNotification('Address and Fault Code are required', 'warning');
+        return;
+    }
+    
+    manualVCDS.push({
+        address,
+        module,
+        fault_code: code,
+        status,
+        description
     });
+    
+    renderManualVCDS();
+    
+    document.getElementById('vcds-manual-address').value = '';
+    document.getElementById('vcds-manual-module').value = '';
+    document.getElementById('vcds-manual-code').value = '';
+    document.getElementById('vcds-manual-description').value = '';
+    document.getElementById('vcds-manual-address').focus();
+}
+
+function renderManualVCDS() {
+    const list = document.getElementById('vcds-manual-list');
+    const importBtn = document.getElementById('vcds-import-manual-btn');
+    
+    if (manualVCDS.length === 0) {
+        list.innerHTML = '<p class="vcds-empty">No faults added yet.</p>';
+        importBtn.style.display = 'none';
+        return;
+    }
+    
+    list.innerHTML = manualVCDS.map((f, i) => `
+        <div class="vcds-fault-item">
+            <strong>${f.address}</strong> ${f.fault_code} - ${f.description || f.module || 'Unknown'}
+            <button class="btn-danger btn-small" onclick="removeManualVCDS(${i})">Remove</button>
+        </div>
+    `).join('');
+    
+    importBtn.style.display = 'block';
+}
+
+function removeManualVCDS(index) {
+    manualVCDS.splice(index, 1);
+    renderManualVCDS();
+}
+
+async function importManualVCDS() {
+    if (!currentVehicleId) {
+        showNotification('Please select a vehicle first', 'warning');
+        return;
+    }
+    
+    if (manualVCDS.length === 0) {
+        showNotification('No faults to import', 'warning');
+        return;
+    }
+    
+    const result = await apiCall('/api/vcds/import', {
+        method: 'POST',
+        body: JSON.stringify({
+            vehicle_id: currentVehicleId,
+            faults: manualVCDS
+        })
+    });
+    
+    manualVCDS = [];
+    closeModal();
+    loadVCDS();
+    showNotification(`Imported ${result.imported} faults`, 'success');
+}
+
+async function parseVCDSFile() {
+    const fileInput = document.getElementById('vcds-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showNotification('Please select a file first', 'warning');
+        return;
+    }
+    
+    const content = await file.text();
+    const extension = file.name.split('.').pop().toLowerCase();
+    
+    let faults;
+    if (extension === 'csv') {
+        faults = parseVCDSCSV(content);
+    } else {
+        faults = await apiCall('/api/vcds/parse', {
+            method: 'POST',
+            body: JSON.stringify({ content })
+        });
+    }
+    
+    if (faults.error) {
+        showNotification(faults.message, 'error');
+        return;
+    }
+    
+    if (faults.length === 0) {
+        showNotification('No faults found in file', 'warning');
+        return;
+    }
+    
+    showNotification(`Parsed ${faults.length} faults from file`, 'success');
     
     const preview = document.getElementById('vcds-preview');
     preview.innerHTML = `
-        <h4>Parsed Faults (${faults.length})</h4>
-        ${faults.map((f, i) => `
-            <div style="margin: 0.5rem 0; padding: 0.5rem; background: var(--bg-tertiary);">
-                <strong>${f.address}</strong> ${f.fault_code} - ${f.component}
-            </div>
-        `).join('')}
-        ${faults.length > 0 ? `<button class="btn-primary" onclick="importVCDS(${JSON.stringify(faults).replace(/"/g, '&quot;')})">Import All</button>` : ''}
+        <div class="vcds-result">
+            <h4>Parsed Faults from ${file.name} (${faults.length})</h4>
+            ${faults.map((f, i) => `
+                <div class="vcds-fault-item" style="margin: 0.5rem 0; padding: 0.5rem; background: var(--bg-tertiary);">
+                    <strong>${f.address}</strong> ${f.fault_code || '---'} - ${f.description || f.module || 'Unknown'}
+                </div>
+            `).join('')}
+            <button class="btn-primary" onclick="importVCDS(${JSON.stringify(faults).replace(/"/g, '&quot;')})">Import All (${faults.length})</button>
+        </div>
     `;
 }
 
+function parseVCDSCSV(content) {
+    const lines = content.trim().split('\n');
+    const faults = [];
+    
+    for (const line of lines) {
+        const parts = line.split(',').map(p => p.trim());
+        
+        if (parts.length >= 2) {
+            faults.push({
+                address: parts[0] || '',
+                fault_code: parts[1] || '',
+                module: parts[2] || '',
+                description: parts[3] || '',
+                status: parts[4] || 'Fault'
+            });
+        }
+    }
+    
+    return faults;
+}
+
+async function parseVCDS() {
+    const content = document.getElementById('vcds-paste').value;
+    
+    if (!content || !content.trim()) {
+        showNotification('Please paste VCDS output first', 'warning');
+        return;
+    }
+    
+    try {
+        const faults = await apiCall('/api/vcds/parse', {
+            method: 'POST',
+            body: JSON.stringify({ content })
+        });
+        
+        const preview = document.getElementById('vcds-preview');
+        
+        if (faults.error) {
+            preview.innerHTML = `
+                <div class="vcds-error">
+                    <h4>⚠️ Parse Error</h4>
+                    <p>${faults.message}</p>
+                    ${faults.suggestions ? `<p><strong>Suggestions:</strong></p><ul>${faults.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>` : ''}
+                </div>
+                <div class="vcds-raw">
+                    <h4>Raw Input:</h4>
+                    <pre>${content}</pre>
+                </div>
+            `;
+            return;
+        }
+        
+        preview.innerHTML = `
+            <div class="vcds-result">
+                <h4>Parsed Faults (${faults.length})</h4>
+                ${faults.length === 0 ? `
+                    <p class="vcds-empty">No faults detected in input.</p>
+                    <div class="vcds-raw">
+                        <h4>Raw Input:</h4>
+                        <pre>${content}</pre>
+                    </div>
+                ` : `
+                    ${faults.map((f, i) => `
+                        <div class="vcds-fault-item" style="margin: 0.5rem 0; padding: 0.5rem; background: var(--bg-tertiary);">
+                            <strong>${f.address}</strong> ${f.fault_code || '---'} - ${f.description || f.module || 'Unknown'}
+                            ${f.confidence ? `<span class="vcds-confidence vcds-confidence-${f.confidence}">${f.confidence}</span>` : ''}
+                        </div>
+                    `).join('')}
+                    <button class="btn-primary" onclick="importVCDS(${JSON.stringify(faults).replace(/"/g, '&quot;')})">Import All (${faults.length})</button>
+                `}
+            </div>
+        `;
+        
+        if (faults.length > 0) {
+            showNotification(`Parsed ${faults.length} faults`, 'success');
+        }
+        
+    } catch (error) {
+        showNotification(`Parse failed: ${error.message}`, 'error');
+        document.getElementById('vcds-preview').innerHTML = `
+            <div class="vcds-error">
+                <h4>⚠️ Error</h4>
+                <p>${error.message}</p>
+            </div>
+        `;
+    }
+}
+
 async function importVCDS(faults) {
-    await apiCall('/api/vcds/import', {
+    if (!currentVehicleId) {
+        showNotification('Please select a vehicle first', 'warning');
+        return;
+    }
+    
+    const result = await apiCall('/api/vcds/import', {
         method: 'POST',
         body: JSON.stringify({
             vehicle_id: currentVehicleId,
             faults: faults
         })
     });
+    
     closeModal();
     loadVCDS();
+    showNotification(`Imported ${result.imported || faults.length} faults`, 'success');
 }
 
 async function clearFault(id) {
