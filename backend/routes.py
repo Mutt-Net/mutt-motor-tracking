@@ -658,13 +658,27 @@ def parse_vcds():
             
             fault_match = simple_fault_pattern.match(line)
             if fault_match and address:
+                fault_code = fault_match.group(1)
                 faults.append({
                     'address': address,
                     'module': module,
-                    'fault_code': fault_match.group(1),
+                    'fault_code': fault_code,
                     'description': fault_match.group(2).strip(),
-                    'status': 'Fault'
+                    'status': 'Fault',
+                    'confidence': 'high' if len(fault_code) == 5 else 'medium'
                 })
+        
+        if len(faults) == 0 and content.strip():
+            return jsonify({
+                'error': True,
+                'message': 'No faults could be parsed from the input',
+                'suggestions': [
+                    'Ensure each fault code is on its own line',
+                    'Format: "ADDRESS Module Name" followed by "CODE Description"',
+                    'Example: "08 Auto HVAC" then "00819 High Pressure Sensor"',
+                    'Use 5-digit fault codes (e.g., 00819, 03582)'
+                ]
+            })
         
         return jsonify(faults)
     
@@ -723,7 +737,8 @@ def parse_vcds():
                         'module': module_name,
                         'fault_code': fault_code,
                         'description': description,
-                        'status': 'Fault'
+                        'status': 'Fault',
+                        'confidence': 'high' if len(fault_code) == 5 else 'medium'
                     })
             else:
                 faults.append({
@@ -733,6 +748,29 @@ def parse_vcds():
                     'description': '',
                     'status': 'Unknown'
                 })
+    
+    if len(faults) == 0 and content.strip():
+        import re
+        lines = content.strip().split('\n')
+        has_numbers = bool(re.search(r'\d{4,}', content))
+        has_addresses = bool(re.search(r'\b\d{2}\b', content))
+        
+        return jsonify({
+            'error': True,
+            'message': 'No faults could be parsed from the input',
+            'suggestions': [
+                'Ensure each fault code is on its own line',
+                'Format: "ADDRESS Module Name" followed by "CODE Description"',
+                'Example: "08 Auto HVAC" then "00819 High Pressure Sensor"',
+                'Or use "Address XX: Module" format'
+            ],
+            'debug': {
+                'has_5_digit_codes': has_numbers,
+                'has_addresses': has_addresses,
+                'line_count': len(lines),
+                'sample_lines': lines[:5]
+            }
+        })
     
     return jsonify(faults)
 
@@ -1535,7 +1573,7 @@ def backup_settings():
             result[s.key] = s.value
     
     backup = {
-        'version': '1.0',
+        'version': '1.1.0',
         'exported_at': datetime.now(timezone.utc).isoformat(),
         'settings': result
     }
@@ -1557,7 +1595,7 @@ def backup_settings_to_file():
                 result[s.key] = s.value
         
         backup = {
-            'version': '1.0',
+            'version': '1.1.0',
             'exported_at': datetime.now(timezone.utc).isoformat(),
             'settings': result
         }
