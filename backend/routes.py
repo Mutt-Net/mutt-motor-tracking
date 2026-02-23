@@ -1351,6 +1351,53 @@ def delete_document(id):
     db.session.commit()
     return jsonify({'success': True})
 
+# Auth Routes
+@routes.route('/auth/verify-pin', methods=['POST'])
+def verify_pin():
+    """Verify the mobile app PIN."""
+    data = request.json or {}
+    pin = data.get('pin')
+    
+    if not pin:
+        return jsonify({'error': 'PIN is required'}), 400
+    
+    stored_pin = Setting.query.filter_by(key='mobile_pin').first()
+    
+    if not stored_pin:
+        return jsonify({'valid': False, 'error': 'PIN not configured'}), 404
+    
+    if stored_pin.value == pin:
+        return jsonify({'valid': True})
+    else:
+        return jsonify({'valid': False, 'error': 'Invalid PIN'}), 401
+
+@routes.route('/auth/set-pin', methods=['POST'])
+def set_pin():
+    """Set the mobile app PIN."""
+    data = request.json or {}
+    pin = data.get('pin')
+    
+    if not pin:
+        return jsonify({'error': 'PIN is required'}), 400
+    
+    if len(pin) != 4 or not pin.isdigit():
+        return jsonify({'error': 'PIN must be exactly 4 digits'}), 400
+    
+    setting = Setting.query.filter_by(key='mobile_pin').first()
+    if setting:
+        setting.value = pin
+    else:
+        setting = Setting(
+            key='mobile_pin',
+            value=pin,
+            value_type='string',
+            description='Mobile app PIN'
+        )
+        db.session.add(setting)
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
 # Settings Routes
 @routes.route('/settings', methods=['GET'])
 def get_settings():
