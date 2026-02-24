@@ -381,6 +381,37 @@ python backend/app.py  # Start server for manual testing
 
 ---
 
+## Environment Setup Required
+
+**Blocking Issue:** Python 3.10+ is not installed on this system.
+
+**To verify and run the application:**
+
+1. **Install Python 3.10+** from one of these sources:
+   - [python.org](https://www.python.org/downloads/)
+   - Microsoft Store (full Python, not the stub)
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r backend/requirements.txt
+   ```
+
+3. **Run tests with coverage:**
+   ```bash
+   python -m pytest backend/tests/ --cov=backend --cov-fail-under=95
+   ```
+
+4. **Start the server:**
+   ```bash
+   python backend/app.py
+   ```
+
+5. **Open browser to:** `http://localhost:5000`
+
+**Expected outcome:** All 105+ tests pass with >95% coverage.
+
+---
+
 ## Prioritization Rationale
 
 1. **Phase 1 (Foundation)**: Create directory structure, Flask app, database config ✓
