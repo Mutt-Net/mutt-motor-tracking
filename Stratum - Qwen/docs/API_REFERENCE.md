@@ -1,36 +1,62 @@
 # API Reference
 
-**Backend:** Flask REST API  
-**Database:** SQLite with SQLAlchemy ORM  
+**Backend:** Flask REST API
+**Database:** SQLite with SQLAlchemy ORM
 **Generated:** 2026-02-23
+**Last Updated:** 2026-02-23
 
 ---
 
 ## Overview
 
-This document describes all API endpoints in the Mutt Motor Tracking application. The backend provides a comprehensive REST API for vehicle management, service tracking, modification tracking, VCDS diagnostics, cost analysis, and settings management.
+This document describes all API endpoints in the Mutt Motor Tracking application. The backend provides a comprehensive REST API for vehicle management, service tracking, modification tracking, VCDS diagnostics, cost analysis, fuel tracking, and documentation.
 
-**Base URL:** `/api`  
-**Content Type:** `application/json` (unless otherwise noted)  
+**Base URL:** `/api`
+**Content Type:** `application/json` (unless otherwise noted)
 **Authentication:** None (local application)
+
+**Total Endpoints:** 52
 
 ---
 
 ## Table of Contents
 
-1. [Dashboard](#dashboard)
-2. [Vehicles](#vehicles)
-3. [Maintenance/Service](#maintenanceservice)
-4. [Modifications](#modifications)
-5. [VCDS Diagnostics](#vcds-diagnostics)
-6. [Fuel Tracking](#fuel-tracking)
-7. [Costs](#costs)
-8. [Documents](#documents)
-9. [Notes](#notes)
-10. [Guides](#guides)
-11. [Settings](#settings)
+1. [Health Check](#health-check)
+2. [Dashboard](#dashboard)
+3. [Vehicles](#vehicles)
+4. [Vehicle Photos](#vehicle-photos)
+5. [Maintenance/Service](#maintenanceservice)
+6. [Service Intervals](#service-intervals)
+7. [Reminders](#reminders)
+8. [Maintenance Timeline](#maintenance-timeline)
+9. [Modifications](#modifications)
+10. [VCDS Diagnostics](#vcds-diagnostics)
+11. [Costs](#costs)
 12. [Analytics](#analytics)
-13. [Test Mode](#test-mode)
+13. [Fuel Tracking](#fuel-tracking)
+14. [Documents](#documents)
+15. [File Upload](#file-upload)
+16. [Notes](#notes)
+17. [Settings](#settings)
+18. [Guides](#guides)
+
+---
+
+## Health Check
+
+### Health Check
+
+**Endpoint:** `GET /api/health`
+
+**Description:** Returns API health status.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Mutt Motor Tracking API"
+}
+```
 
 ---
 
@@ -40,26 +66,19 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 **Endpoint:** `GET /api/dashboard`
 
-**Description:** Returns aggregated statistics for the dashboard view including vehicle counts, service status, costs, and mod status.
-
-**Query Parameters:**
-- `vehicle_id` (optional) - Filter stats to specific vehicle
+**Description:** Returns aggregated statistics for the dashboard view including vehicle counts, service status, costs, and fault codes.
 
 **Response:**
 ```json
 {
   "total_vehicles": 3,
-  "total_service_items": 45,
-  "overdue_services": 2,
-  "upcoming_services": 5,
-  "total_mods": 12,
-  "total_costs": 5420.50,
-  "total_faults": 3,
-  "mods_by_status": {
-    "planned": 4,
-    "in_progress": 2,
-    "completed": 6
-  }
+  "total_services": 45,
+  "total_modifications": 12,
+  "total_active_faults": 3,
+  "total_cost": 5420.50,
+  "total_mod_cost": 2500.00,
+  "upcoming_reminders": 5,
+  "overdue_services": 2
 }
 ```
 
@@ -88,8 +107,7 @@ This document describes all API endpoints in the Mutt Motor Tracking application
     "mileage": 45000,
     "purchase_date": "2020-03-15",
     "purchase_price": 28000.00,
-    "is_active": true,
-    "photo_primary": "/uploads/vehicles/1/primary.jpg"
+    "is_active": true
   }
 ]
 ```
@@ -123,7 +141,9 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 }
 ```
 
-**Response:** Created vehicle object
+**Validation:** `name`, `make`, and `model` are required.
+
+**Response:** Created vehicle object (201)
 
 ### Update Vehicle
 
@@ -141,21 +161,69 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 **Response:** `{"message": "Vehicle deleted successfully"}`
 
-### Export Vehicle
+### Export Vehicles
 
-**Endpoint:** `GET /api/vehicles/<int:vehicle_id>/export`
+**Endpoint:** `GET /api/vehicles/export`
 
-**Description:** Exports vehicle with all related data as JSON.
+**Description:** Exports all vehicles as JSON.
 
-**Response:** JSON object containing vehicle and all related records (services, mods, fuel, costs, documents, notes, VCDS faults)
+**Response:**
+```json
+{
+  "exported_at": "2026-02-23T10:30:00Z",
+  "vehicles": [...]
+}
+```
 
-### Import Vehicle
+### Import Vehicles
 
 **Endpoint:** `POST /api/vehicles/import`
 
-**Request Body:** Complete vehicle JSON object (from export)
+**Request Body:**
+```json
+{
+  "vehicles": [
+    {
+      "name": "2020 GTI",
+      "make": "Volkswagen",
+      "model": "GTI",
+      ...
+    }
+  ]
+}
+```
 
-**Response:** Created vehicle with new ID
+**Response:**
+```json
+{
+  "message": "Imported 2 vehicles",
+  "vehicles": ["2020 GTI", "2018 Golf R"]
+}
+```
+
+---
+
+## Vehicle Photos
+
+### List Vehicle Photos
+
+**Endpoint:** `GET /api/vehicles/<int:vehicle_id>/photos`
+
+**Description:** Returns all photos for a specific vehicle.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "filename": "1_1708689000.123456_photo.jpg",
+    "original_filename": "photo.jpg",
+    "is_primary": true,
+    "uploaded_at": "2026-02-23T10:30:00Z"
+  }
+]
+```
 
 ### Upload Vehicle Photo
 
@@ -164,55 +232,71 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 **Content-Type:** `multipart/form-data`
 
 **Form Fields:**
-- `photo` - Image file
+- `file` - Image file (JPG, PNG, GIF, WEBP)
 
 **Response:**
 ```json
 {
   "id": 1,
-  "filename": "photo_001.jpg",
-  "path": "/uploads/vehicles/1/photo_001.jpg",
+  "vehicle_id": 1,
+  "filename": "1_1708689000.123456_photo.jpg",
+  "original_filename": "photo.jpg",
   "is_primary": false,
   "uploaded_at": "2026-02-23T10:30:00Z"
 }
 ```
 
-### Set Primary Vehicle Photo
-
-**Endpoint:** `PUT /api/vehicles/<int:vehicle_id>/photos/<int:photo_id>/primary`
-
-**Description:** Sets a photo as primary (unsets other primary flags).
-
-**Response:** Updated photo object
-
 ### Delete Vehicle Photo
 
-**Endpoint:** `DELETE /api/vehicles/<int:vehicle_id>/photos/<int:photo_id>`
+**Endpoint:** `DELETE /api/photos/<int:photo_id>`
+
+**Description:** Deletes a photo and removes the file from disk.
 
 **Response:** `{"message": "Photo deleted successfully"}`
+
+### Set Primary Vehicle Photo
+
+**Endpoint:** `POST /api/photos/<int:photo_id>/primary`
+
+**Description:** Sets a photo as primary (unsets other primary flags for the vehicle).
+
+**Response:** Updated photo object
 
 ---
 
 ## Maintenance/Service
 
-### List Service Items
+### List All Services
 
 **Endpoint:** `GET /api/maintenance`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
-- `status` (optional) - Filter by status (ok, upcoming, overdue, completed)
-- `category` (optional) - Filter by category
 
-**Response:** Array of service items with timeline status
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "service_date": "2026-02-15",
+    "mileage": 45000,
+    "description": "Oil change",
+    "cost": 75.00,
+    "parts_used": ["Oil filter VF123", "5W-30 Oil 5qt"],
+    "service_type": "Oil Change",
+    "notes": "Dealership service"
+  }
+]
+```
 
-### Get Service Item
+### Get Single Service
 
 **Endpoint:** `GET /api/maintenance/<int:service_id>`
 
 **Response:** Service item with full details
 
-### Create Service Item
+### Create Service
 
 **Endpoint:** `POST /api/maintenance`
 
@@ -220,130 +304,209 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 ```json
 {
   "vehicle_id": 1,
-  "name": "Oil Change",
-  "category": "Engine",
-  "status": "ok",
-  "due_date": "2026-06-15",
-  "due_mileage": 50000,
-  "interval_months": 6,
-  "interval_miles": 5000,
-  "last_performed_date": "2025-12-15",
-  "last_performed_mileage": 45000,
-  "notes": "Use 5W-30 synthetic",
+  "service_date": "2026-02-15",
+  "mileage": 45000,
+  "description": "Oil change",
+  "cost": 75.00,
   "parts_used": ["Oil filter VF123", "5W-30 Oil 5qt"],
-  "cost": 75.00
+  "service_type": "Oil Change",
+  "notes": "Dealership service"
 }
 ```
 
-**Response:** Created service item
+**Validation:** `vehicle_id` and `service_date` are required.
 
-### Update Service Item
+**Response:** Created service item (201)
+
+### Update Service
 
 **Endpoint:** `PUT /api/maintenance/<int:service_id>`
 
-**Request Body:** Service fields to update
+**Request Body:** Service fields to update (partial update supported)
 
 **Response:** Updated service item
 
-### Delete Service Item
+### Delete Service
 
 **Endpoint:** `DELETE /api/maintenance/<int:service_id>`
 
-**Response:** `{"message": "Service item deleted successfully"}`
+**Response:** `{"message": "Service deleted successfully"}`
 
-### Mark Service Complete
+---
 
-**Endpoint:** `POST /api/maintenance/<int:service_id>/complete`
+## Service Intervals
+
+### List Service Intervals
+
+**Endpoint:** `GET /api/maintenance/intervals`
+
+**Query Parameters:**
+- `vehicle_id` (optional) - Filter by vehicle
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "name": "Oil Change",
+    "interval_miles": 5000,
+    "interval_months": 6,
+    "last_service_date": "2026-02-15",
+    "last_service_mileage": 45000,
+    "is_active": true
+  }
+]
+```
+
+### Create Service Interval
+
+**Endpoint:** `POST /api/maintenance/intervals`
 
 **Request Body:**
 ```json
 {
-  "performed_date": "2026-02-23",
-  "performed_mileage": 48500,
-  "cost": 75.00,
-  "parts_used": ["Oil filter VF123", "5W-30 Oil 5qt"],
-  "notes": "Completed at dealership"
+  "vehicle_id": 1,
+  "name": "Oil Change",
+  "interval_miles": 5000,
+  "interval_months": 6,
+  "last_service_date": "2026-02-15",
+  "last_service_mileage": 45000,
+  "is_active": true
 }
 ```
 
-**Response:** Updated service item with completed status
+**Validation:** `vehicle_id` and `name` are required.
+
+**Response:** Created service interval (201)
+
+### Delete Service Interval
+
+**Endpoint:** `DELETE /api/maintenance/intervals/<int:interval_id>`
+
+**Response:** `{"message": "Interval deleted successfully"}`
+
+---
+
+## Reminders
+
+### List Reminders
+
+**Endpoint:** `GET /api/maintenance/reminders`
+
+**Query Parameters:**
+- `vehicle_id` (optional) - Filter by vehicle
+- `status` (optional) - Filter by status (pending, completed)
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "name": "Oil Change Due",
+    "due_date": "2026-08-15",
+    "status": "pending",
+    "notes": "6 months since last oil change"
+  }
+]
+```
+
+### Update Reminder
+
+**Endpoint:** `PUT /api/maintenance/reminders/<int:reminder_id>`
+
+**Request Body:**
+```json
+{
+  "status": "completed",
+  "completed_date": "2026-02-23",
+  "notes": "Completed early"
+}
+```
+
+**Response:** Updated reminder
+
+### Complete Reminder
+
+**Endpoint:** `POST /api/maintenance/reminders/<int:reminder_id>/complete`
+
+**Description:** Marks a reminder as completed with current date.
+
+**Response:** Updated reminder with status "completed"
+
+---
+
+## Maintenance Timeline
 
 ### Get Maintenance Timeline
 
 **Endpoint:** `GET /api/maintenance/timeline`
 
 **Query Parameters:**
-- `vehicle_id` (required) - Vehicle to get timeline for
+- `vehicle_id` (optional) - Filter by vehicle
 
 **Response:**
 ```json
-{
-  "vehicle_id": 1,
-  "timeline": [
-    {
-      "id": 1,
-      "name": "Oil Change",
-      "status": "overdue",
-      "due_date": "2026-02-15",
-      "days_overdue": 8,
-      "priority": "high"
-    },
-    {
-      "id": 2,
-      "name": "Tire Rotation",
-      "status": "upcoming",
-      "due_date": "2026-03-15",
-      "days_until": 20,
-      "priority": "medium"
-    }
-  ],
-  "summary": {
-    "total": 12,
-    "overdue": 2,
-    "upcoming": 3,
-    "ok": 7
+[
+  {
+    "interval_id": 1,
+    "vehicle_id": 1,
+    "name": "Oil Change",
+    "last_service_date": "2026-02-15",
+    "last_service_mileage": 45000,
+    "next_due_date": "2026-08-15",
+    "next_due_mileage": 50000,
+    "status": "ok",
+    "interval_months": 6,
+    "interval_miles": 5000
   }
-}
+]
 ```
 
-### Create Service Reminder
-
-**Endpoint:** `POST /api/maintenance/reminders`
-
-**Description:** Auto-creates reminders from service intervals.
-
-**Request Body:**
-```json
-{
-  "vehicle_id": 1,
-  "service_template_id": 5
-}
-```
-
-**Response:** Created reminder service item
+**Status Values:**
+- `ok` - Service is current
+- `upcoming` - Due within 30 days
+- `overdue` - Past due date
 
 ---
 
 ## Modifications
 
-### List Mods
+### List All Modifications
 
 **Endpoint:** `GET /api/mods`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
 - `status` (optional) - Filter by status (planned, in_progress, completed)
-- `category` (optional) - Filter by category
 
-**Response:** Array of modification objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "name": "Stage 1 ECU Tune",
+    "description": "APR ECU flash",
+    "status": "planned",
+    "cost": 650.00,
+    "parts": ["APR ECU flash", "Downpipe"],
+    "installation_notes": "Requires 93 octane fuel",
+    "vendor": "APR",
+    "vendor_link": "https://example.com",
+    "created_at": "2026-02-01T10:00:00Z"
+  }
+]
+```
 
-### Get Single Mod
+### Get Single Modification
 
 **Endpoint:** `GET /api/mods/<int:mod_id>`
 
 **Response:** Modification with full details
 
-### Create Mod
+### Create Modification
 
 **Endpoint:** `POST /api/mods`
 
@@ -352,45 +515,46 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 {
   "vehicle_id": 1,
   "name": "Stage 1 ECU Tune",
-  "category": "Engine",
+  "description": "APR ECU flash",
   "status": "planned",
-  "description": "APR Stage 1 ECU flash",
+  "cost": 650.00,
   "parts": ["APR ECU flash", "Downpipe"],
-  "cost_estimate": 650.00,
-  "cost_actual": null,
-  "started_date": null,
-  "completed_date": null,
-  "notes": "Requires 93 octane fuel"
+  "installation_notes": "Requires 93 octane fuel",
+  "vendor": "APR",
+  "vendor_link": "https://example.com"
 }
 ```
 
-**Response:** Created modification
+**Validation:** `vehicle_id` and `name` are required.
 
-### Update Mod
+**Response:** Created modification (201)
+
+### Update Modification
 
 **Endpoint:** `PUT /api/mods/<int:mod_id>`
 
-**Request Body:** Modification fields to update
+**Request Body:** Modification fields to update (partial update supported)
 
 **Response:** Updated modification
 
-### Delete Mod
+### Delete Modification
 
 **Endpoint:** `DELETE /api/mods/<int:mod_id>`
 
 **Response:** `{"message": "Modification deleted successfully"}`
 
-### Update Mod Status
+### Update Modification Status
 
-**Endpoint:** `POST /api/mods/<int:mod_id>/status`
+**Endpoint:** `PUT /api/mods/<int:mod_id>/status`
 
 **Request Body:**
 ```json
 {
-  "status": "in_progress",
-  "started_date": "2026-02-23"
+  "status": "in_progress"
 }
 ```
+
+**Valid Statuses:** `planned`, `in_progress`, `completed`
 
 **Response:** Updated modification with new status
 
@@ -398,24 +562,37 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 ## VCDS Diagnostics
 
-### List Faults
+### List All Fault Codes
 
 **Endpoint:** `GET /api/vcds`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
 - `status` (optional) - Filter by status (active, cleared)
-- `system` (optional) - Filter by system (Engine, Transmission, ABS, etc.)
 
-**Response:** Array of VCDS fault objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "code": "P0300",
+    "description": "Random/Multiple Cylinder Misfire Detected",
+    "status": "active",
+    "detected_date": "2026-02-20T10:00:00Z",
+    "cleared_date": null,
+    "notes": "Intermittent, occurs under load"
+  }
+]
+```
 
-### Get Single Fault
+### Get Single Fault Code
 
 **Endpoint:** `GET /api/vcds/<int:fault_id>`
 
-**Response:** Fault with full details
+**Response:** Fault code with full details
 
-### Create Fault (Manual Entry)
+### Create Fault Code
 
 **Endpoint:** `POST /api/vcds`
 
@@ -423,51 +600,52 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 ```json
 {
   "vehicle_id": 1,
-  "fault_code": "P0300",
-  "system": "Engine",
+  "code": "P0300",
   "description": "Random/Multiple Cylinder Misfire Detected",
   "status": "active",
-  "detected_date": "2026-02-20",
-  "cleared_date": null,
   "notes": "Intermittent, occurs under load"
 }
 ```
 
-**Response:** Created fault
+**Validation:** `vehicle_id` and `code` are required.
 
-### Update Fault
+**Response:** Created fault code (201)
+
+### Update Fault Code
 
 **Endpoint:** `PUT /api/vcds/<int:fault_id>`
 
-**Request Body:** Fault fields to update
+**Request Body:** Fault code fields to update (partial update supported)
 
-**Response:** Updated fault
+**Response:** Updated fault code
 
-### Delete Fault
+### Delete Fault Code
 
 **Endpoint:** `DELETE /api/vcds/<int:fault_id>`
 
-**Response:** `{"message": "Fault deleted successfully"}`
+**Response:** `{"message": "Fault code deleted successfully"}`
 
-### Mark Fault Cleared
+### Clear Fault Code
 
 **Endpoint:** `POST /api/vcds/<int:fault_id>/clear`
 
-**Request Body:**
-```json
-{
-  "cleared_date": "2026-02-23",
-  "notes": "Cleared after replacing spark plugs"
-}
-```
+**Description:** Marks a fault as cleared with current timestamp.
 
-**Response:** Updated fault with cleared status
+**Response:** Updated fault code with status "cleared"
+
+### Activate Fault Code
+
+**Endpoint:** `POST /api/vcds/<int:fault_id>/activate`
+
+**Description:** Marks a fault as active (clears cleared_date).
+
+**Response:** Updated fault code with status "active"
 
 ### Parse VCDS Text
 
 **Endpoint:** `POST /api/vcds/parse`
 
-**Description:** Parses VCDS log text and extracts fault codes.
+**Description:** Parses VCDS diagnostic text output and extracts fault codes.
 
 **Request Body:**
 ```json
@@ -481,115 +659,42 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 {
   "faults": [
     {
-      "fault_code": "P0300",
-      "system": "Engine",
-      "description": "Random/Multiple Cylinder Misfire Detected"
+      "code": "P0300",
+      "description": "Random/Multiple Cylinder Misfire Detected",
+      "status": "active"
     }
   ],
-  "vcds_version": "22.3.0"
+  "count": 1
 }
 ```
 
-### Import VCDS Log
+### Import VCDS Faults
 
 **Endpoint:** `POST /api/vcds/import`
 
-**Description:** Parses VCDS text and creates fault records.
+**Description:** Imports parsed VCDS faults into the database.
 
 **Request Body:**
 ```json
 {
   "vehicle_id": 1,
-  "text": "VCDS log content...",
-  "scan_date": "2026-02-23"
-}
-```
-
-**Response:**
-```json
-{
-  "imported_count": 3,
   "faults": [
-    { "id": 1, "fault_code": "P0300", ... },
-    { "id": 2, "fault_code": "P0420", ... },
-    { "id": 3, "fault_code": "C0035", ... }
-  ]
+    {
+      "code": "P0300",
+      "description": "Random/Multiple Cylinder Misfire Detected",
+      "status": "active"
+    }
+  ],
+  "skip_existing": true
 }
 ```
-
----
-
-## Fuel Tracking
-
-### List Fuel Entries
-
-**Endpoint:** `GET /api/fuel`
-
-**Query Parameters:**
-- `vehicle_id` (optional) - Filter by vehicle
-- `start_date` (optional) - Filter by date range start
-- `end_date` (optional) - Filter by date range end
-
-**Response:** Array of fuel entry objects
-
-### Get Fuel Entry
-
-**Endpoint:** `GET /api/fuel/<int:fuel_id>`
-
-**Response:** Fuel entry with full details
-
-### Create Fuel Entry
-
-**Endpoint:** `POST /api/fuel`
-
-**Request Body:**
-```json
-{
-  "vehicle_id": 1,
-  "date": "2026-02-23",
-  "mileage": 48500,
-  "gallons": 12.5,
-  "price_per_gallon": 3.45,
-  "total_cost": 43.13,
-  "station": "Shell",
-  "fuel_type": "Premium",
-  "is_full_fill": true,
-  "notes": "Regular fill-up"
-}
-```
-
-**Response:** Created fuel entry
-
-### Update Fuel Entry
-
-**Endpoint:** `PUT /api/fuel/<int:fuel_id>`
-
-**Request Body:** Fuel entry fields to update
-
-**Response:** Updated fuel entry
-
-### Delete Fuel Entry
-
-**Endpoint:** `DELETE /api/fuel/<int:fuel_id>`
-
-**Response:** `{"message": "Fuel entry deleted successfully"}`
-
-### Get Fuel Economy
-
-**Endpoint:** `GET /api/fuel/economy`
-
-**Query Parameters:**
-- `vehicle_id` (required) - Vehicle to calculate for
 
 **Response:**
 ```json
 {
-  "vehicle_id": 1,
-  "average_mpg": 28.5,
-  "entries_count": 24,
-  "total_gallons": 450.5,
-  "total_cost": 1554.23,
-  "last_calculation": "2026-02-23"
+  "message": "Imported 2 faults, skipped 1",
+  "imported": ["P0300", "P0420"],
+  "skipped": ["C0035"]
 }
 ```
 
@@ -597,17 +702,72 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 ## Costs
 
-### List Costs
+### List All Costs
 
 **Endpoint:** `GET /api/costs`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
-- `category` (optional) - Filter by category (service, mod, fuel, other)
-- `start_date` (optional) - Date range start
-- `end_date` (optional) - Date range end
+- `category` (optional) - Filter by category
+- `start_date` (optional) - Filter by date range start
+- `end_date` (optional) - Filter by date range end
 
-**Response:** Array of cost objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "amount": 75.00,
+    "category": "service",
+    "date": "2026-02-15",
+    "description": "Oil change",
+    "vendor": "Dealership",
+    "notes": "Regular maintenance"
+  }
+]
+```
+
+### Get Single Cost
+
+**Endpoint:** `GET /api/costs/<int:cost_id>`
+
+**Response:** Cost entry with full details
+
+### Create Cost Entry
+
+**Endpoint:** `POST /api/costs`
+
+**Request Body:**
+```json
+{
+  "vehicle_id": 1,
+  "amount": 75.00,
+  "category": "service",
+  "date": "2026-02-15",
+  "description": "Oil change",
+  "vendor": "Dealership",
+  "notes": "Regular maintenance"
+}
+```
+
+**Validation:** `vehicle_id` and `amount` are required.
+
+**Response:** Created cost entry (201)
+
+### Update Cost Entry
+
+**Endpoint:** `PUT /api/costs/<int:cost_id>`
+
+**Request Body:** Cost fields to update (partial update supported)
+
+**Response:** Updated cost entry
+
+### Delete Cost Entry
+
+**Endpoint:** `DELETE /api/costs/<int:cost_id>`
+
+**Response:** `{"message": "Cost entry deleted successfully"}`
 
 ### Get Cost Summary
 
@@ -615,9 +775,9 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
+- `category` (optional) - Filter by category
 - `start_date` (optional) - Date range start
 - `end_date` (optional) - Date range end
-- `group_by` (optional) - Group by (category, month, year)
 
 **Response:**
 ```json
@@ -628,121 +788,158 @@ This document describes all API endpoints in the Mutt Motor Tracking application
     "mod": 3500.00,
     "fuel": 670.50
   },
-  "by_month": {
-    "2026-01": 450.00,
-    "2026-02": 320.50
+  "count": 24,
+  "date_range": {
+    "start": null,
+    "end": null
   }
 }
 ```
 
-### Create Cost Entry
+---
 
-**Endpoint:** `POST /api/costs`
+## Analytics
 
-**Request Body:**
+### Get Spending Analytics
+
+**Endpoint:** `GET /api/analytics/spending`
+
+**Query Parameters:**
+- `vehicle_id` (optional) - Filter by vehicle
+- `months` (optional, default: 12) - Number of months to include
+
+**Response:**
 ```json
 {
-  "vehicle_id": 1,
-  "category": "service",
-  "amount": 75.00,
-  "date": "2026-02-23",
-  "description": "Oil change",
-  "payment_method": "Credit Card",
-  "receipt_url": "/uploads/receipts/001.pdf",
-  "notes": "Dealership service"
+  "by_category": {
+    "service": 1250.00,
+    "mod": 3500.00,
+    "fuel": 670.50
+  },
+  "by_month": {
+    "2026-01": 450.00,
+    "2026-02": 320.50
+  },
+  "total": 5420.50,
+  "period_months": 12
 }
 ```
-
-**Response:** Created cost entry
-
-### Update Cost Entry
-
-**Endpoint:** `PUT /api/costs/<int:cost_id>`
-
-**Request Body:** Cost fields to update
-
-**Response:** Updated cost entry
-
-### Delete Cost Entry
-
-**Endpoint:** `DELETE /api/costs/<int:cost_id>`
-
-**Response:** `{"message": "Cost entry deleted successfully"}`
 
 ---
 
 ## Documents
 
-### List Documents
+### List All Documents
 
 **Endpoint:** `GET /api/documents`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
-- `type` (optional) - Filter by type (receipt, manual, warranty, other)
 
-**Response:** Array of document objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "title": "Oil Change Receipt",
+    "document_type": "receipt",
+    "filename": "receipt_001.pdf",
+    "file_path": "/uploads/receipts/receipt_001.pdf",
+    "notes": "Dealership service"
+  }
+]
+```
 
-### Get Document
+### Get Single Document
 
-**Endpoint:** `GET /api/documents/<int:document_id>`
+**Endpoint:** `GET /api/documents/<int:doc_id>`
 
 **Response:** Document with full details
 
-### Upload Document
+### Create Document
 
 **Endpoint:** `POST /api/documents`
+
+**Request Body:**
+```json
+{
+  "vehicle_id": 1,
+  "title": "Oil Change Receipt",
+  "document_type": "receipt",
+  "filename": "receipt_001.pdf",
+  "file_path": "/uploads/receipts/receipt_001.pdf",
+  "notes": "Dealership service"
+}
+```
+
+**Validation:** `vehicle_id` and `title` are required.
+
+**Response:** Created document (201)
+
+### Update Document
+
+**Endpoint:** `PUT /api/documents/<int:doc_id>`
+
+**Request Body:** Document fields to update (partial update supported)
+
+**Response:** Updated document
+
+### Delete Document
+
+**Endpoint:** `DELETE /api/documents/<int:doc_id>`
+
+**Response:** `{"message": "Document deleted successfully"}`
+
+---
+
+## File Upload
+
+### Upload File
+
+**Endpoint:** `POST /api/upload`
 
 **Content-Type:** `multipart/form-data`
 
 **Form Fields:**
-- `file` - Document file
-- `vehicle_id` - Associated vehicle
-- `type` - Document type (receipt, manual, warranty, other)
-- `description` - Optional description
+- `file` - Document/receipt file (JPG, PNG, GIF, WEBP, PDF, TXT, MD)
 
 **Response:**
 ```json
 {
-  "id": 1,
-  "filename": "receipt_001.pdf",
-  "path": "/uploads/documents/1/receipt_001.pdf",
-  "type": "receipt",
-  "vehicle_id": 1,
-  "uploaded_at": "2026-02-23T10:30:00Z"
+  "filename": "1708689000.123456_receipt.pdf",
+  "original_filename": "receipt.pdf",
+  "file_path": "/uploads/1708689000.123456_receipt.pdf"
 }
 ```
 
-### Delete Document
-
-**Endpoint:** `DELETE /api/documents/<int:document_id>`
-
-**Response:** `{"message": "Document deleted successfully"}`
-
-### Get File
-
-**Endpoint:** `GET /api/files/<path:filename>`
-
-**Description:** Serves uploaded files (documents, receipts, photos).
-
-**Response:** File content with appropriate Content-Type
+**Supported File Types:** Images (JPG, PNG, GIF, WEBP), Documents (PDF, TXT, MD)
 
 ---
 
 ## Notes
 
-### List Notes
+### List All Notes
 
 **Endpoint:** `GET /api/notes`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
-- `entity_type` (optional) - Filter by entity type (vehicle, service, mod, etc.)
-- `entity_id` (optional) - Filter by entity ID
 
-**Response:** Array of note objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "title": "Service Reminder",
+    "content": "Remember to use OEM filter next time",
+    "created_at": "2026-02-01T10:00:00Z"
+  }
+]
+```
 
-### Get Note
+### Get Single Note
 
 **Endpoint:** `GET /api/notes/<int:note_id>`
 
@@ -756,20 +953,20 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 ```json
 {
   "vehicle_id": 1,
-  "entity_type": "service",
-  "entity_id": 5,
-  "content": "Remember to use OEM filter next time",
-  "tags": ["reminder", "service"]
+  "title": "Service Reminder",
+  "content": "Remember to use OEM filter next time"
 }
 ```
 
-**Response:** Created note
+**Validation:** `vehicle_id` and `title` are required.
+
+**Response:** Created note (201)
 
 ### Update Note
 
 **Endpoint:** `PUT /api/notes/<int:note_id>`
 
-**Request Body:** Note fields to update
+**Request Body:** Note fields to update (partial update supported)
 
 **Response:** Updated note
 
@@ -783,21 +980,35 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 ## Guides
 
-### List Guides
+### List All Guides
 
 **Endpoint:** `GET /api/guides`
 
 **Query Parameters:**
 - `vehicle_id` (optional) - Filter by vehicle
-- `category` (optional) - Filter by category
+- `is_template` (optional, type: bool) - Filter by template status
 
-**Response:** Array of guide objects
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "title": "Oil Change",
+    "description": "Regular oil and filter change",
+    "interval_miles": 5000,
+    "interval_months": 6,
+    "steps": ["Drain old oil", "Replace oil filter", "Add new oil", "Check for leaks"],
+    "is_template": true,
+    "vehicle_id": null
+  }
+]
+```
 
-### Get Guide
+### Get Single Guide
 
 **Endpoint:** `GET /api/guides/<int:guide_id>`
 
-**Response:** Guide with full details including intervals
+**Response:** Guide with full details
 
 ### Create Guide
 
@@ -806,23 +1017,25 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 **Request Body:**
 ```json
 {
-  "vehicle_id": 1,
-  "title": "Oil Change Guide",
-  "category": "Maintenance",
-  "content": "Step-by-step instructions...",
+  "title": "Oil Change",
+  "description": "Regular oil and filter change",
   "interval_miles": 5000,
   "interval_months": 6,
-  "is_template": false
+  "steps": ["Drain old oil", "Replace oil filter", "Add new oil", "Check for leaks"],
+  "is_template": true,
+  "vehicle_id": null
 }
 ```
 
-**Response:** Created guide
+**Validation:** `title` is required.
+
+**Response:** Created guide (201)
 
 ### Update Guide
 
 **Endpoint:** `PUT /api/guides/<int:guide_id>`
 
-**Request Body:** Guide fields to update
+**Request Body:** Guide fields to update (partial update supported)
 
 **Response:** Updated guide
 
@@ -836,20 +1049,13 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 **Endpoint:** `POST /api/guides/templates`
 
-**Description:** Loads predefined guide templates into the database.
-
-**Request Body:** (optional)
-```json
-{
-  "vehicle_id": 1
-}
-```
+**Description:** Loads default guide templates (Oil Change, Tire Rotation, Brake Inspection) into the database.
 
 **Response:**
 ```json
 {
-  "loaded_count": 12,
-  "templates": ["Oil Change", "Tire Rotation", "Brake Service", ...]
+  "message": "Loaded 3 templates",
+  "templates": ["Oil Change", "Tire Rotation", "Brake Inspection"]
 }
 ```
 
@@ -857,138 +1063,185 @@ This document describes all API endpoints in the Mutt Motor Tracking application
 
 ## Settings
 
-### Get Settings
+### Get All Settings
 
 **Endpoint:** `GET /api/settings`
 
-**Description:** Returns all application settings.
-
 **Response:**
 ```json
 {
-  "currency_symbol": "$",
-  "distance_unit": "miles",
-  "temperature_unit": "F",
-  "total_spend_include_service": true,
-  "total_spend_include_mods": true,
-  "total_spend_include_fuel": false,
-  "test_mode": false,
-  "default_vehicle_id": 1
-}
-```
-
-### Update Settings
-
-**Endpoint:** `PUT /api/settings`
-
-**Request Body:** Settings fields to update (partial update supported)
-
-**Response:** Updated settings
-
-### Export Settings
-
-**Endpoint:** `GET /api/settings/export`
-
-**Description:** Exports settings as JSON backup file.
-
-**Response:** JSON settings object
-
-### Import Settings
-
-**Endpoint:** `POST /api/settings/import`
-
-**Request Body:** Settings JSON object
-
-**Response:** `{"message": "Settings imported successfully"}`
-
-### Export All Data (CSV)
-
-**Endpoint:** `GET /api/settings/export/csv`
-
-**Description:** Exports all data as CSV files (one per table).
-
-**Response:** ZIP file containing CSV exports
-
----
-
-## Analytics
-
-### Get Analytics Data
-
-**Endpoint:** `GET /api/analytics`
-
-**Query Parameters:**
-- `vehicle_id` (required) - Vehicle to analyze
-- `metric` (optional) - Specific metric (costs, fuel, service)
-- `period` (optional) - Time period (month, year, all)
-
-**Response:**
-```json
-{
-  "vehicle_id": 1,
-  "costs": {
-    "total": 5420.50,
-    "by_month": [...],
-    "by_category": {...}
+  "currency_symbol": {
+    "value": "$",
+    "description": "Currency symbol for display"
   },
-  "fuel": {
-    "average_mpg": 28.5,
-    "entries": [...],
-    "trend": [...]
+  "distance_unit": {
+    "value": "miles",
+    "description": "Distance unit (miles or km)"
   },
-  "service": {
-    "total_services": 12,
-    "completed": 10,
-    "upcoming": 2,
-    "overdue": 0
+  "test_mode": {
+    "value": "false",
+    "description": "Enable test mode for data isolation"
   }
 }
 ```
 
-### Get Cost Trends
+### Get Single Setting
 
-**Endpoint:** `GET /api/analytics/costs`
+**Endpoint:** `GET /api/settings/<key>`
 
-**Query Parameters:**
-- `vehicle_id` (required)
-- `group_by` (optional) - month, quarter, year
+**Response:**
+```json
+{
+  "key": "currency_symbol",
+  "value": "$",
+  "description": "Currency symbol for display"
+}
+```
 
-**Response:** Time series data for cost analysis
+### Create or Update Setting
 
-### Get Fuel Trends
+**Endpoint:** `POST /api/settings`
 
-**Endpoint:** `GET /api/analytics/fuel`
+**Request Body:**
+```json
+{
+  "key": "currency_symbol",
+  "value": "$",
+  "description": "Currency symbol for display"
+}
+```
 
-**Query Parameters:**
-- `vehicle_id` (required)
+**Validation:** `key` and `value` are required.
 
-**Response:** MPG trend over time
+**Response:** Updated setting
+
+### Backup Settings
+
+**Endpoint:** `GET /api/settings/backup`
+
+**Description:** Exports all settings as JSON backup.
+
+**Response:**
+```json
+{
+  "backed_up_at": "2026-02-23T10:30:00Z",
+  "settings": {
+    "currency_symbol": {"value": "$", "description": "..."},
+    ...
+  }
+}
+```
+
+### Restore Settings
+
+**Endpoint:** `POST /api/settings/restore`
+
+**Request Body:** Settings JSON object (from backup)
+
+**Response:**
+```json
+{
+  "message": "Restored 5 settings",
+  "restored": ["currency_symbol", "distance_unit", ...]
+}
+```
 
 ---
 
-## Test Mode
+## Fuel Tracking
 
-### Enable Test Mode
+### List All Fuel Entries
 
-**Endpoint:** `POST /api/test/enable`
+**Endpoint:** `GET /api/fuel`
 
-**Description:** Enables test mode for data isolation.
+**Query Parameters:**
+- `vehicle_id` (optional) - Filter by vehicle
 
-**Response:** `{"message": "Test mode enabled", "test_mode": true}`
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "vehicle_id": 1,
+    "date": "2026-02-15",
+    "mileage": 45000,
+    "gallons": 12.5,
+    "price_per_gallon": 3.45,
+    "total_cost": 43.13,
+    "station": "Shell",
+    "is_full_tank": true,
+    "notes": "Regular fill-up"
+  }
+]
+```
 
-### Disable Test Mode
+### Get Single Fuel Entry
 
-**Endpoint:** `POST /api/test/disable`
+**Endpoint:** `GET /api/fuel/<int:entry_id>`
 
-**Response:** `{"message": "Test mode disabled", "test_mode": false}`
+**Response:** Fuel entry with full details
 
-### Clear Test Data
+### Create Fuel Entry
 
-**Endpoint:** `DELETE /api/test/clear`
+**Endpoint:** `POST /api/fuel`
 
-**Description:** Deletes all test data (marked with test flag).
+**Request Body:**
+```json
+{
+  "vehicle_id": 1,
+  "date": "2026-02-15",
+  "mileage": 45000,
+  "gallons": 12.5,
+  "price_per_gallon": 3.45,
+  "total_cost": 43.13,
+  "station": "Shell",
+  "is_full_tank": true,
+  "notes": "Regular fill-up"
+}
+```
 
-**Response:** `{"message": "Test data cleared", "deleted_count": 15}`
+**Validation:** `vehicle_id` and `date` are required.
+
+**Response:** Created fuel entry (201)
+
+### Update Fuel Entry
+
+**Endpoint:** `PUT /api/fuel/<int:entry_id>`
+
+**Request Body:** Fuel entry fields to update (partial update supported)
+
+**Response:** Updated fuel entry
+
+### Delete Fuel Entry
+
+**Endpoint:** `DELETE /api/fuel/<int:entry_id>`
+
+**Response:** `{"message": "Fuel entry deleted successfully"}`
+
+### Get Fuel Economy
+
+**Endpoint:** `GET /api/fuel/economy`
+
+**Query Parameters:**
+- `vehicle_id` (required) - Vehicle to calculate MPG for
+
+**Response:**
+```json
+{
+  "mpg_data": [
+    {
+      "date": "2026-02-15",
+      "mileage": 45000,
+      "mpg": 28.5,
+      "gallons": 12.5
+    }
+  ],
+  "average_mpg": 28.5,
+  "vehicle_id": 1
+}
+```
+
+**Note:** Requires at least 2 fuel entries with `is_full_tank=true` to calculate MPG.
 
 ---
 
@@ -1003,17 +1256,14 @@ All endpoints return errors in the following format:
 ```
 
 **HTTP Status Codes:**
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request (validation error)
-- `404` - Not Found
-- `500` - Internal Server Error
 
----
-
-## Rate Limiting
-
-Currently no rate limiting is implemented (local application).
+| Code | Meaning | Description |
+|------|---------|-------------|
+| `200` | Success | Request completed successfully |
+| `201` | Created | Resource created successfully |
+| `400` | Bad Request | Validation error or missing required fields |
+| `404` | Not Found | Resource not found |
+| `500` | Internal Server Error | Server error |
 
 ---
 
@@ -1021,16 +1271,15 @@ Currently no rate limiting is implemented (local application).
 
 **Upload Directory:** `uploads/` (relative to backend root)
 
-**Subdirectories:**
-- `uploads/vehicles/<vehicle_id>/` - Vehicle photos
-- `uploads/documents/<document_id>/` - General documents
-- `uploads/receipts/` - Receipt files
-
 **Supported File Types:**
 - Images: JPG, PNG, GIF, WEBP
 - Documents: PDF, TXT, MD
 
-**Max File Size:** 10MB (configurable)
+**Max File Size:** 10MB (configurable in Flask app config)
+
+**Endpoints:**
+- `POST /api/upload` - Upload any file
+- `POST /api/vehicles/<vehicle_id>/photos` - Upload vehicle photo
 
 ---
 
@@ -1038,25 +1287,53 @@ Currently no rate limiting is implemented (local application).
 
 The API is backed by 12 SQLAlchemy models:
 
-1. **Vehicle** - Vehicle information
-2. **Service** - Maintenance/service records
-3. **Modification** - Vehicle modifications
-4. **VCDSFault** - Diagnostic fault codes
-5. **FuelEntry** - Fuel fill-up records
-6. **Cost** - Cost tracking
-7. **Document** - Document/receipt metadata
-8. **Note** - User notes
-9. **Guide** - How-to guides
-10. **Settings** - Application settings
-11. **VehiclePhoto** - Vehicle photo metadata
-12. **TestFlag** - Test data isolation marker
+| Model | Description |
+|-------|-------------|
+| **Vehicle** | Vehicle information (make, model, year, VIN, mileage) |
+| **VehiclePhoto** | Vehicle photo metadata (filename, primary flag) |
+| **Service** | Maintenance/service records (date, mileage, cost, parts) |
+| **ServiceInterval** | Recurring service intervals (interval miles/months) |
+| **Reminder** | Service reminders (due date, status) |
+| **Modification** | Vehicle modifications (status workflow, parts, cost) |
+| **FaultCode** | VCDS diagnostic fault codes (status, dates) |
+| **Cost** | Cost tracking (category, vendor, date) |
+| **FuelEntry** | Fuel fill-up records (gallons, MPG calculation) |
+| **Document** | Document/receipt metadata (file path, type) |
+| **Note** | User notes (title, content) |
+| **Guide** | How-to guides (steps, intervals, templates) |
+| **Settings** | Application settings (key-value pairs) |
 
 ---
 
 ## Notes
 
-- All dates are in ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+- All dates are in ISO 8601 format (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`)
 - All monetary values are in the configured currency (default: USD)
 - All distances are in configured units (default: miles)
 - Cascade delete is implemented for all vehicle relationships
-- Test mode filters data using the TestFlag model
+- JSON arrays (e.g., `parts_used`, `parts`, `steps`) are stored as JSON strings
+- Test mode support for data isolation (configured via Settings)
+
+---
+
+## Endpoint Summary
+
+| Category | Endpoints |
+|----------|-----------|
+| Health | `GET /api/health` |
+| Dashboard | `GET /api/dashboard` |
+| Vehicles | `GET, POST, PUT, DELETE /api/vehicles`, `GET, POST /api/vehicles/export`, `POST /api/vehicles/import` |
+| Photos | `GET, POST /api/vehicles/<id>/photos`, `DELETE /api/photos/<id>`, `POST /api/photos/<id>/primary` |
+| Maintenance | `GET, POST, PUT, DELETE /api/maintenance`, `GET, POST /api/maintenance/intervals`, `GET, PUT, POST /api/maintenance/reminders`, `GET /api/maintenance/timeline` |
+| Modifications | `GET, POST, PUT, DELETE /api/mods`, `PUT /api/mods/<id>/status` |
+| VCDS | `GET, POST, PUT, DELETE /api/vcds`, `POST /api/vcds/parse`, `POST /api/vcds/import`, `POST /api/vcds/<id>/clear`, `POST /api/vcds/<id>/activate` |
+| Costs | `GET, POST, PUT, DELETE /api/costs`, `GET /api/costs/summary` |
+| Analytics | `GET /api/analytics/spending` |
+| Fuel | `GET, POST, PUT, DELETE /api/fuel`, `GET /api/fuel/economy` |
+| Documents | `GET, POST, PUT, DELETE /api/documents` |
+| Upload | `POST /api/upload` |
+| Notes | `GET, POST, PUT, DELETE /api/notes` |
+| Settings | `GET, POST /api/settings`, `GET /api/settings/<key>`, `GET /api/settings/backup`, `POST /api/settings/restore` |
+| Guides | `GET, POST, PUT, DELETE /api/guides`, `POST /api/guides/templates` |
+
+**Total:** 52 endpoints across 14 categories
