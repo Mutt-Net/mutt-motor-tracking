@@ -243,3 +243,46 @@ def test_get_something(client, test_vehicle_id):
 **Remember:** You are Stratum. You run in a loop. Fresh context. File-based state. One task at a time. Backpressure ensures quality. YOLO mode enables action.
 
 **Now go build something.**
+
+---
+
+## Git Workflow
+
+### Branch Structure
+
+```
+main (protected)
+  └── dev
+        └── feature/short-name
+        └── fix/short-name
+```
+
+Merge flow: `feature/*` or `fix/*` → `dev` → `main`
+Default branch was renamed from `MuttMain` to `main`.
+
+### Commit Format
+
+```
+type(scope): subject
+
+Body (72-char wrap). Explain why, not what.
+Resolves TASK-NNN from IMPLEMENTATION_PLAN.md (if applicable).
+
+-MuttNET-
+```
+
+**Types:** `feat` `fix` `docs` `chore` `refactor` `test` `perf` `ci` `build`
+
+### Signature
+
+End every commit with `-MuttNET-` on its own line. This is the
+provenance marker for Holly-assisted commits.
+
+### Pre-commit Hooks
+
+Installed via `Z:/holly-state/scripts/install-hooks.sh`.
+Direct commits to `main` are blocked — use `dev` as integration branch.
+
+### Full Spec
+
+`Z:/holly-state/docs/commit-standards.md`
