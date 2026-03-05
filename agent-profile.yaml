@@ -1,0 +1,27 @@
+project: mutt-motor-tracking
+stack: Python / Flask 3.0 / SQLAlchemy / SQLite / Vanilla JS
+
+compute:
+  architecture: claude-sonnet-4-6
+  implementation: qwen2.5-coder:32b
+  ollama_host: http://192.168.0.100:11434
+
+task_classification:
+  holly_class:
+    - architecture decisions
+    - security review (TLS, auth)
+    - complex debugging
+    - new feature design
+    - database schema changes
+  skutter_class:
+    - CRUD endpoint implementation
+    - test writing
+    - bug fixes with clear root cause
+    - refactoring known patterns
+    - adding validation to existing endpoints
+
+validation:
+  test: pytest backend/tests/
+  test_coverage: pytest --cov=backend --cov-fail-under=95
+  lint: python -m flake8 backend/
+  note: "Python must be on PATH — use venv if needed (python env blocker known)"

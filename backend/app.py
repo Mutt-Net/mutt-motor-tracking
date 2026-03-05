@@ -97,4 +97,11 @@ with app.app_context():
         print("Created default settings")
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    import os
+    ssl_ctx = None
+    if os.environ.get('FLASK_SSL') == '1':
+        cert = os.path.join(os.path.dirname(__file__), 'server.crt')
+        key = os.path.join(os.path.dirname(__file__), 'server.key')
+        if os.path.exists(cert) and os.path.exists(key):
+            ssl_ctx = (cert, key)
+    app.run(debug=False, host='0.0.0.0', port=5000, ssl_context=ssl_ctx)

@@ -20,3 +20,10 @@ config.py
 settings.py
 TESTING_SESSION.md
 coverage.json
+
+# TLS certs
+backend/server.crt
+*.crt
+
+# Local backups
+backups/
