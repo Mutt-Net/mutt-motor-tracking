@@ -195,7 +195,7 @@ def get_vehicles():
 @routes.route('/vehicles', methods=['POST'])
 def add_vehicle():
     data = request.json or {}
-    error = validate_required(data, [])
+    error = validate_required(data, ['name'])
     if error:
         return jsonify({'error': error}), 400
     
@@ -285,7 +285,7 @@ def export_vehicle(id):
 @routes.route('/vehicles/import', methods=['POST'])
 def import_vehicle():
     data = request.json or {}
-    error = validate_required(data, [])
+    error = validate_required(data, ['name'])
     if error:
         return jsonify({'error': error}), 400
     
@@ -334,7 +334,7 @@ def import_vehicle():
 
 @routes.route('/maintenance', methods=['GET'])
 def get_maintenance():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Maintenance.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -394,7 +394,7 @@ def delete_maintenance(id):
 
 @routes.route('/maintenance/timeline', methods=['GET'])
 def get_maintenance_timeline():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     if not vehicle_id:
         return jsonify({'error': 'vehicle_id required'}), 400
     
@@ -415,7 +415,7 @@ def get_maintenance_timeline():
 
 @routes.route('/mods', methods=['GET'])
 def get_mods():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Mod.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -472,7 +472,7 @@ def delete_mod(id):
 
 @routes.route('/costs', methods=['GET'])
 def get_costs():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Cost.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -497,9 +497,31 @@ def add_cost():
     db.session.commit()
     return jsonify({'id': cost.id}), 201
 
+@routes.route('/costs/<int:id>', methods=['PUT'])
+def update_cost(id):
+    cost = db.session.get(Cost, id)
+    if not cost:
+        return jsonify({'error': 'Cost not found'}), 404
+
+    data = request.json or {}
+    for key in ['date', 'category', 'amount', 'description']:
+        if key in data:
+            setattr(cost, key, parse_date(data[key]) if key == 'date' else data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
+@routes.route('/costs/<int:id>', methods=['DELETE'])
+def delete_cost(id):
+    cost = db.session.get(Cost, id)
+    if not cost:
+        return jsonify({'error': 'Cost not found'}), 404
+    db.session.delete(cost)
+    db.session.commit()
+    return jsonify({'success': True})
+
 @routes.route('/costs/summary', methods=['GET'])
 def cost_summary():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Cost.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -512,7 +534,7 @@ def cost_summary():
 
 @routes.route('/notes', methods=['GET'])
 def get_notes():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Note.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -538,6 +560,24 @@ def add_note():
     db.session.commit()
     return jsonify({'id': note.id}), 201
 
+@routes.route('/notes/<int:id>', methods=['PUT'])
+def update_note(id):
+    note = db.session.get(Note, id)
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
+
+    data = request.json or {}
+    for key in ['date', 'title', 'content', 'tags']:
+        if key in data:
+            if key == 'date':
+                setattr(note, key, parse_date(data[key]))
+            elif key == 'tags':
+                setattr(note, key, json.dumps(data[key]) if data[key] else None)
+            else:
+                setattr(note, key, data[key])
+    db.session.commit()
+    return jsonify({'success': True})
+
 @routes.route('/notes/<int:id>', methods=['DELETE'])
 def delete_note(id):
     note = db.session.get(Note, id)
@@ -549,7 +589,7 @@ def delete_note(id):
 
 @routes.route('/vcds', methods=['GET'])
 def get_vcds_faults():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = VCDSFault.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -776,7 +816,7 @@ def parse_vcds():
 
 @routes.route('/dashboard', methods=['GET'])
 def dashboard():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     if not vehicle_id:
         return jsonify({'error': 'vehicle_id required'}), 400
     
@@ -800,7 +840,7 @@ def dashboard():
     if include_costs:
         total_costs = db.session.query(db.func.sum(Cost.amount)).filter(Cost.vehicle_id == vehicle_id).scalar() or 0
     if include_fuel:
-        total_fuel = db.session.query(db.func.sum(FuelEntry.cost)).filter(FuelEntry.vehicle_id == vehicle_id).scalar() or 0
+        total_fuel = db.session.query(db.func.sum(FuelEntry.total_cost)).filter(FuelEntry.vehicle_id == vehicle_id).scalar() or 0
     
     recent_maintenance = Maintenance.query.filter_by(vehicle_id=vehicle_id).order_by(Maintenance.date.desc()).limit(5).all()
     active_faults = VCDSFault.query.filter_by(vehicle_id=vehicle_id, status='active').count()
@@ -819,7 +859,7 @@ def dashboard():
 
 @routes.route('/analytics', methods=['GET'])
 def analytics():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     category = request.args.get('category')
@@ -900,13 +940,13 @@ def analytics():
         for f in fuel_entries:
             if category and category != 'fuel':
                 continue
-            if f.date and f.cost:
+            if f.date and f.total_cost:
                 key = f.date.strftime('%Y-%m')
-                monthly_spending[key] = monthly_spending.get(key, 0) + f.cost
+                monthly_spending[key] = monthly_spending.get(key, 0) + f.total_cost
                 year = f.date.strftime('%Y')
-                yearly_spending[year] = yearly_spending.get(year, 0) + f.cost
+                yearly_spending[year] = yearly_spending.get(year, 0) + f.total_cost
                 cat = 'fuel'
-                category_spending[cat] = category_spending.get(cat, 0) + f.cost
+                category_spending[cat] = category_spending.get(cat, 0) + f.total_cost
     
     total_spent = sum(monthly_spending.values())
     
@@ -935,7 +975,7 @@ def analytics():
 
 @routes.route('/guides', methods=['GET'])
 def get_guides():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     category = request.args.get('category')
     
     query = Guide.query
@@ -1019,7 +1059,7 @@ def create_guide_templates():
 
 @routes.route('/vehicle-photos', methods=['GET'])
 def get_vehicle_photos():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     photos = VehiclePhoto.query.filter_by(vehicle_id=vehicle_id).all() if vehicle_id else []
     return jsonify([{
         'id': p.id, 'vehicle_id': p.vehicle_id, 'filename': p.filename,
@@ -1045,7 +1085,7 @@ def add_vehicle_photo():
 
 @routes.route('/fuel', methods=['GET'])
 def get_fuel_entries():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = FuelEntry.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -1100,7 +1140,7 @@ def delete_fuel_entry(id):
 
 @routes.route('/reminders', methods=['GET'])
 def get_reminders():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = Reminder.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)
@@ -1160,7 +1200,7 @@ def delete_reminder(id):
 
 @routes.route('/receipts', methods=['GET'])
 def get_receipts():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     maintenance_id = request.args.get('maintenance_id')
     query = Receipt.query
     if vehicle_id:
@@ -1259,7 +1299,7 @@ def delete_upload(filename):
 # Service Document Routes
 @routes.route('/documents', methods=['GET'])
 def get_documents():
-    vehicle_id = request.args.get('vehicle_id')
+    vehicle_id = request.args.get('vehicle_id', type=int)
     query = ServiceDocument.query
     if vehicle_id:
         query = query.filter_by(vehicle_id=vehicle_id)

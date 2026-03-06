@@ -24,7 +24,7 @@ app.register_blueprint(routes, url_prefix='/api')
 
 @app.route('/')
 def index():
-    with open(os.path.join(basedir, 'frontend', 'index.html'), 'r') as f:
+    with open(os.path.join(basedir, 'frontend', 'index.html'), 'r', encoding='utf-8') as f:
         return f.read()
 
 @app.route('/css/<path:filename>')
@@ -36,7 +36,7 @@ def serve_css(filename):
         return 'Forbidden', 403
     if not os.path.exists(safe_path):
         return 'Not Found', 404
-    with open(safe_path, 'r') as f:
+    with open(safe_path, 'r', encoding='utf-8') as f:
         return f.read(), 200, {'Content-Type': 'text/css'}
 
 @app.route('/js/<path:filename>')
@@ -48,7 +48,7 @@ def serve_js(filename):
         return 'Forbidden', 403
     if not os.path.exists(safe_path):
         return 'Not Found', 404
-    with open(safe_path, 'r') as f:
+    with open(safe_path, 'r', encoding='utf-8') as f:
         return f.read(), 200, {'Content-Type': 'application/javascript'}
 
 with app.app_context():
@@ -97,11 +97,5 @@ with app.app_context():
         print("Created default settings")
 
 if __name__ == '__main__':
-    import os
-    ssl_ctx = None
-    if os.environ.get('FLASK_SSL') == '1':
-        cert = os.path.join(os.path.dirname(__file__), 'server.crt')
-        key = os.path.join(os.path.dirname(__file__), 'server.key')
-        if os.path.exists(cert) and os.path.exists(key):
-            ssl_ctx = (cert, key)
-    app.run(debug=False, host='0.0.0.0', port=5000, ssl_context=ssl_ctx)
+    from waitress import serve
+    serve(app, host='0.0.0.0', port=5000, threads=4)

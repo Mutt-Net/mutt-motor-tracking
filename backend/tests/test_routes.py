@@ -47,10 +47,9 @@ class TestVehicles:
         assert 'id' in data
 
     def test_create_vehicle_missing_name(self, client):
-        """Test creating a vehicle without required name returns error."""
-        import pytest
-        with pytest.raises(Exception):
-            response = client.post('/api/vehicles', json={'year': 2022})
+        """Test creating a vehicle without required name returns 400."""
+        response = client.post('/api/vehicles', json={'year': 2022})
+        assert response.status_code == 400
 
     def test_update_vehicle(self, client, test_vehicle):
         """Test updating a vehicle."""

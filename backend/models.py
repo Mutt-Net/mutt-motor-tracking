@@ -176,7 +176,7 @@ class ServiceDocument(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id', ondelete='CASCADE'), nullable=False)
-    maintenance_id = db.Column(db.Integer, db.ForeignKey('maintenance.id', ondelete='SET NULL'), nullable=True)
+    maintenance_id = db.Column(db.Integer, db.ForeignKey('maintenance.id', ondelete='CASCADE'), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     document_type = db.Column(db.String(50))
