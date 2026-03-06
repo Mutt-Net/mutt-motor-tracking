@@ -27,3 +27,6 @@ backend/server.crt
 
 # Local backups
 backups/
+
+# Git worktrees
+.worktrees/
