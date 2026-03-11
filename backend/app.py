@@ -10,7 +10,10 @@ from backend.extensions import db
 basedir = os.path.join(os.path.dirname(os.path.dirname(__file__)))
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "database", "logbook.db")}'
+_db_url = os.environ.get('DATABASE_URL')
+if not _db_url:
+    raise RuntimeError('DATABASE_URL environment variable is not set')
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
