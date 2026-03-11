@@ -30,3 +30,6 @@ backups/
 
 # Git worktrees
 .worktrees/
+
+# Local Docker dev data
+dev-postgres-data/
