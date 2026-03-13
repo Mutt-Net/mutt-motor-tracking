@@ -300,32 +300,9 @@ credentials injected via env vars, never hardcoded.
 
 ---
 
-## Task 5: TrueNAS Dataset Setup (Manual — One Time)
+## Task 5: ~~TrueNAS Dataset Setup~~ — Not Required
 
-These steps are performed in the TrueNAS SCALE web UI before deploying.
-
-**Step 1: Create the datasets**
-
-In TrueNAS UI → **Datasets** → **Add Dataset** (twice):
-
-| Dataset name | Suggested path |
-|---|---|
-| `logbook-postgres` | `/mnt/<pool>/logbook/postgres-data` |
-| `logbook-uploads` | `/mnt/<pool>/logbook/uploads` |
-
-Use default settings (no special compression or quota needed).
-
-**Step 2: Note the full paths**
-
-These are the values for `POSTGRES_DATA_PATH` and `UPLOADS_PATH` in the TrueNAS environment config.
-
-**Step 3: Set permissions**
-
-The PostgreSQL container runs as UID 999. Set dataset ownership:
-
-In TrueNAS UI → **Datasets** → select `logbook-postgres` → **Edit Permissions** → set User to `999`, Group to `999`, apply recursively.
-
-(The uploads dataset can stay as root — Flask runs as root inside the container.)
+Storage is handled by Docker named volumes (`postgres-data`, `uploads`) managed by Portainer. No manual dataset creation needed.
 
 ---
 
@@ -350,13 +327,11 @@ In Portainer UI:
 
 **Step 3: Set environment variables**
 
-In the **Environment variables** section, add:
+In the **Environment variables** section, add one variable:
 
 | Variable | Value |
 |---|---|
 | `POSTGRES_PASSWORD` | `<choose-a-strong-password>` |
-| `POSTGRES_DATA_PATH` | `/mnt/<pool>/logbook/postgres-data` |
-| `UPLOADS_PATH` | `/mnt/<pool>/logbook/uploads` |
 
 **Step 4: Deploy the stack**
 
@@ -442,5 +417,5 @@ git commit -m "chore: remove SQLite db from tracking, add to gitignore
 - [ ] `curl http://<truenas-ip>:5000/api/vehicles/1/maintenance` returns maintenance records
 - [ ] Mobile app connects and syncs without errors
 - [ ] File upload (photo or document) saves and is retrievable
-- [ ] TrueNAS restart → containers come back up automatically (`restart: unless-stopped`)
+- [ ] Portainer restart → containers come back up automatically (`restart: unless-stopped`)
 - [ ] `docker compose logs api` shows no ERROR lines after a clean sync
