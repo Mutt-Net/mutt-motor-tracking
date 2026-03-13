@@ -20,8 +20,7 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     environment:
       DATABASE_URL: postgresql://logbook:${POSTGRES_PASSWORD}@db:5432/logbook
     volumes:
