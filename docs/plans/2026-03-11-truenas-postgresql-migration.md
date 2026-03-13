@@ -329,7 +329,7 @@ In TrueNAS UI → **Datasets** → select `logbook-postgres` → **Edit Permissi
 
 ---
 
-## Task 6: Deploy to TrueNAS SCALE
+## Task 6: Deploy via Portainer
 
 **Step 1: Push the branch to GitHub**
 
@@ -337,54 +337,36 @@ In TrueNAS UI → **Datasets** → select `logbook-postgres` → **Edit Permissi
 git push -u origin feature/truenas-postgresql
 ```
 
-**Step 2: Clone the repo on TrueNAS**
+**Step 2: Open Portainer → Stacks → Add Stack**
 
-SSH into TrueNAS:
+In Portainer UI:
+- **Stacks** → **Add stack**
+- Name: `mutt-logbook`
+- Select **Repository** tab (if pulling from Git) or **Web editor** (paste Compose file directly)
 
-```bash
-ssh admin@<truenas-ip>
-cd /mnt/<pool>/logbook
-git clone <repo-url> app
-cd app
-git checkout feature/truenas-postgresql
-```
+**If using Web editor:** paste the full contents of `docker-compose.yml`.
 
-**Step 3: Create the production `.env` file on TrueNAS**
+**If using Repository:** point at the repo URL and branch `feature/truenas-postgresql`, set Compose path to `docker-compose.yml`.
 
-```bash
-cat > .env <<'EOF'
-POSTGRES_PASSWORD=<choose-a-strong-password>
-POSTGRES_DATA_PATH=/mnt/<pool>/logbook/postgres-data
-UPLOADS_PATH=/mnt/<pool>/logbook/uploads
-EOF
-```
+**Step 3: Set environment variables**
 
-**Step 4: Deploy via Custom App (Compose method)**
+In the **Environment variables** section, add:
 
-In TrueNAS SCALE UI → **Apps** → **Discover** → **Custom App** → paste `docker-compose.yml` contents and inject environment variables.
+| Variable | Value |
+|---|---|
+| `POSTGRES_PASSWORD` | `<choose-a-strong-password>` |
+| `POSTGRES_DATA_PATH` | `/mnt/<pool>/logbook/postgres-data` |
+| `UPLOADS_PATH` | `/mnt/<pool>/logbook/uploads` |
 
-Alternatively, run directly via SSH (simpler for first deploy):
+**Step 4: Deploy the stack**
 
-```bash
-cd /mnt/<pool>/logbook/app
-docker compose up -d --build
-```
+Click **Deploy the stack**. Portainer will pull the postgres image, build the Flask image, and start both containers.
 
-**Step 5: Verify deployment**
+**Step 5: Verify in Portainer**
 
-```bash
-docker compose logs api --tail=30
-```
-
-Expected:
+In **Stacks** → `mutt-logbook` → **Logs** for the `api` container. Expected:
 - `Created default vehicle: VW EOS`
 - `Serving on http://0.0.0.0:5000`
-
-```bash
-curl http://localhost:5000/api/vehicles
-```
-
-Expected: JSON array with VW EOS.
 
 **Step 6: Verify from the LAN**
 
@@ -394,7 +376,7 @@ From any device on the network:
 curl http://<truenas-ip>:5000/api/vehicles
 ```
 
-Expected: same JSON response.
+Expected: JSON array with VW EOS.
 
 ---
 
