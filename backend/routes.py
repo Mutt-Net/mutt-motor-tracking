@@ -1818,3 +1818,50 @@ def clear_test_data():
     db.session.commit()
     
     return jsonify({'deleted': deleted})
+
+@routes.route('/dashboard-summary', methods=['GET'])
+def dashboard_summary():
+    today = datetime.now(timezone.utc).date()
+
+    active_faults = VCDSFault.query.filter_by(status='active').all()
+    overdue_reminders = Reminder.query.filter(
+        Reminder.next_due_date < today
+    ).all()
+    upcoming_reminders = Reminder.query.filter(
+        Reminder.next_due_date >= today
+    ).order_by(Reminder.next_due_date).limit(10).all()
+    recent_maintenance = Maintenance.query.order_by(
+        Maintenance.date.desc()
+    ).limit(5).all()
+
+    alerts = []
+    for fault in active_faults:
+        alerts.append({
+            'title': fault.fault_code or fault.component or 'VCDS Fault',
+            'detail': fault.description or fault.component or '',
+            'severity': 'critical',
+        })
+    for reminder in overdue_reminders:
+        days_overdue = (today - reminder.next_due_date).days
+        alerts.append({
+            'title': f'{reminder.type} overdue',
+            'detail': f'{days_overdue} day{"s" if days_overdue != 1 else ""} overdue',
+            'severity': 'urgent',
+        })
+
+    recent = []
+    for m in recent_maintenance:
+        recent.append({
+            'tool': 'MuttMotor',
+            'text': f'{m.category} — {m.description}' if m.description else m.category,
+            'timestamp': datetime.combine(m.date, datetime.min.time()).isoformat() if m.date else '',
+        })
+
+    upcoming = []
+    for reminder in upcoming_reminders:
+        upcoming.append({
+            'title': reminder.type,
+            'date': reminder.next_due_date.isoformat(),
+        })
+
+    return jsonify({'alerts': alerts, 'recent': recent, 'upcoming': upcoming})
