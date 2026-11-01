@@ -1109,7 +1109,7 @@ async function editVehicle(id) {
     
     document.getElementById('edit-vehicle-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        await apiCall(`/api/vehicles/${id}`, {
+        await apiCall(`/vehicles/${id}`, {
             method: 'PUT',
             body: JSON.stringify({
                 name: document.getElementById('ev-name').value,
@@ -1122,24 +1122,25 @@ async function editVehicle(id) {
         });
         closeModal();
         loadVehicleSelector();
-        loadProfiles();
+        loadVehicle();
+        loadDashboard();
     });
 }
 
 async function deleteVehicle(id) {
     if (!confirm('Delete this vehicle and all its data?')) return;
-    await apiCall(`/api/vehicles/${id}`, { method: 'DELETE' });
+    await apiCall(`/vehicles/${id}`, { method: 'DELETE' });
     if (currentVehicleId === id) {
         const vehicles = await apiCall('/vehicles');
         currentVehicleId = vehicles.length > 0 ? vehicles[0].id : null;
         localStorage.setItem(STORAGE_KEY, currentVehicleId || '');
     }
     loadVehicleSelector();
-    loadProfiles();
+    loadDashboard();
 }
 
 async function exportVehicle(id) {
-    const data = await apiCall(`/api/vehicles/${id}/export`);
+    const data = await apiCall(`/vehicles/${id}/export`);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1159,13 +1160,12 @@ function importVehicle() {
         reader.onload = async (event) => {
             try {
                 const data = JSON.parse(event.target.result);
-                const result = await apiCall('/api/vehicles/import', {
+                const result = await apiCall('/vehicles/import', {
                     method: 'POST',
                     body: JSON.stringify(data)
                 });
-                alert('Vehicle imported successfully!');
                 loadVehicleSelector();
-                loadProfiles();
+                showNotification('Vehicle imported successfully', 'success');
             } catch (err) {
                 alert('Failed to import: ' + err.message);
             }
@@ -1187,7 +1187,7 @@ document.getElementById('vehicle-form').addEventListener('submit', async (e) => 
     };
     
     if (currentVehicleId) {
-        await apiCall(`/api/vehicles/${currentVehicleId}`, {
+        await apiCall(`/vehicles/${currentVehicleId}`, {
             method: 'PUT',
             body: JSON.stringify(data)
         });
@@ -1198,7 +1198,9 @@ document.getElementById('vehicle-form').addEventListener('submit', async (e) => 
         });
         currentVehicleId = result.id;
     }
-    alert('Vehicle saved!');
+    await loadVehicleSelector();
+    loadDashboard();
+    showNotification('Vehicle saved', 'success');
 });
 
 async function loadMaintenance() {
@@ -1658,6 +1660,18 @@ document.getElementById('add-reminder-btn')?.addEventListener('click', () => {
 document.getElementById('reminder-filter')?.addEventListener('change', loadReminders);
 
 document.getElementById('add-maintenance-btn').addEventListener('click', () => {
+    const trackedOptions = SERVICE_INTERVAL_TYPES.map(t =>
+        `<option value="${t.key}">${t.label}</option>`
+    ).join('');
+    const generalOptions = [
+        { key: 'suspension', label: 'Suspension' },
+        { key: 'electrical', label: 'Electrical' },
+        { key: 'engine', label: 'Engine' },
+        { key: 'interior', label: 'Interior' },
+        { key: 'exterior', label: 'Exterior' },
+        { key: 'other', label: 'Other' }
+    ].map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+
     showModal('Add Service Record', `
         <form id="maintenance-form">
             <div class="form-row">
@@ -1673,16 +1687,8 @@ document.getElementById('add-maintenance-btn').addEventListener('click', () => {
             <div class="form-group">
                 <label>Category</label>
                 <select id="m-category">
-                    <option value="oil_change">Oil Change</option>
-                    <option value="brakes">Brakes</option>
-                    <option value="suspension">Suspension</option>
-                    <option value="electrical">Electrical</option>
-                    <option value="engine">Engine</option>
-                    <option value="transmission">Transmission</option>
-                    <option value="interior">Interior</option>
-                    <option value="exterior">Exterior</option>
-                    <option value="tires_wheels">Tires & Wheels</option>
-                    <option value="other">Other</option>
+                    <optgroup label="Service Intervals">${trackedOptions}</optgroup>
+                    <optgroup label="General">${generalOptions}</optgroup>
                 </select>
             </div>
             <div class="form-group">
