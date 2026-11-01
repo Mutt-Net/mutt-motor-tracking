@@ -1659,19 +1659,32 @@ document.getElementById('add-reminder-btn')?.addEventListener('click', () => {
 
 document.getElementById('reminder-filter')?.addEventListener('change', loadReminders);
 
-document.getElementById('add-maintenance-btn').addEventListener('click', () => {
-    const trackedOptions = SERVICE_INTERVAL_TYPES.map(t =>
-        `<option value="${t.key}">${t.label}</option>`
-    ).join('');
-    const generalOptions = [
-        { key: 'suspension', label: 'Suspension' },
-        { key: 'electrical', label: 'Electrical' },
-        { key: 'engine', label: 'Engine' },
-        { key: 'interior', label: 'Interior' },
-        { key: 'exterior', label: 'Exterior' },
-        { key: 'other', label: 'Other' }
-    ].map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+async function correctMileage() {
+    if (!currentVehicleId) return;
+    const vehicle = await apiCall(`/vehicles/${currentVehicleId}`);
+    showModal('Correct Mileage', `
+        <form id="mileage-form">
+            <div class="form-group">
+                <label>Current mileage (miles)</label>
+                <input type="number" id="cm-mileage" min="0" value="${vehicle.mileage || 0}" required>
+            </div>
+            <p><small>Sets the car's odometer reading. Old service records keep their own mileage; edit them individually if they are wrong.</small></p>
+            <button type="submit" class="btn-primary">Save</button>
+        </form>
+    `);
+    document.getElementById('mileage-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const mileage = parseInt(document.getElementById('cm-mileage').value);
+        if (isNaN(mileage) || mileage < 0) return;
+        await apiCall(`/vehicles/${currentVehicleId}`, { method: 'PUT', body: JSON.stringify({ mileage }) });
+        closeModal();
+        loadDashboard();
+        showNotification('Mileage updated', 'success');
+    });
+}
+document.getElementById('correct-mileage-btn')?.addEventListener('click', correctMileage);
 
+document.getElementById('add-maintenance-btn').addEventListener('click', () => {
     showModal('Add Service Record', `
         <form id="maintenance-form">
             <div class="form-row">
@@ -1686,10 +1699,7 @@ document.getElementById('add-maintenance-btn').addEventListener('click', () => {
             </div>
             <div class="form-group">
                 <label>Category</label>
-                <select id="m-category">
-                    <optgroup label="Service Intervals">${trackedOptions}</optgroup>
-                    <optgroup label="General">${generalOptions}</optgroup>
-                </select>
+                <select id="m-category">${serviceCategoryOptions()}</select>
             </div>
             <div class="form-group">
                 <label>Description</label>
@@ -1763,9 +1773,19 @@ async function editMaintenance(id) {
     showModal('Edit Service Record', `
         <form id="maintenance-edit-form">
             <input type="hidden" id="me-id" value="${id}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="me-date" value="${(r.date || '').slice(0, 10)}" required>
+                </div>
+                <div class="form-group">
+                    <label>Mileage (miles)</label>
+                    <input type="number" id="me-mileage" value="${r.mileage || ''}">
+                </div>
+            </div>
             <div class="form-group">
-                <label>Mileage (miles)</label>
-                <input type="number" id="me-mileage" value="${r.mileage || ''}">
+                <label>Category</label>
+                <select id="me-category">${serviceCategoryOptions(r.category || '')}</select>
             </div>
             <div class="form-group">
                 <label>Description</label>
@@ -1802,6 +1822,8 @@ async function editMaintenance(id) {
         await apiCall(`/maintenance/${id}`, {
             method: 'PUT',
             body: JSON.stringify({
+                date: document.getElementById('me-date').value,
+                category: document.getElementById('me-category').value,
                 mileage: parseInt(document.getElementById('me-mileage').value) || null,
                 description: document.getElementById('me-description').value,
                 parts_used: document.getElementById('me-parts').value.split(',').map(p => p.trim()).filter(p => p),
@@ -2747,6 +2769,43 @@ const SERVICE_INTERVAL_TYPES = [
     { key: 'air_filter', label: 'Air Filter' },
     { key: 'fuel_filter', label: 'Fuel Filter' }
 ];
+
+// Every category a service record can be logged under (tracked ones also drive due dates).
+const EXTRA_SERVICE_CATEGORIES = [
+    { key: 'mot', label: 'MOT' },
+    { key: 'full_service', label: 'Full Service' },
+    { key: 'interim_service', label: 'Interim Service' },
+    { key: 'cambelt', label: 'Cambelt / Timing Belt' },
+    { key: 'water_pump', label: 'Water Pump' },
+    { key: 'clutch', label: 'Clutch' },
+    { key: 'gearbox_oil', label: 'Gearbox / DSG Oil' },
+    { key: 'haldex', label: 'Haldex / Diff Oil' },
+    { key: 'brake_fluid', label: 'Brake Fluid' },
+    { key: 'pollen_filter', label: 'Pollen / Cabin Filter' },
+    { key: 'tyres', label: 'Tyres' },
+    { key: 'wheel_alignment', label: 'Wheel Alignment' },
+    { key: 'battery', label: 'Battery' },
+    { key: 'wipers', label: 'Wipers' },
+    { key: 'bulbs', label: 'Bulbs / Lights' },
+    { key: 'suspension', label: 'Suspension' },
+    { key: 'exhaust', label: 'Exhaust' },
+    { key: 'electrical', label: 'Electrical' },
+    { key: 'engine', label: 'Engine' },
+    { key: 'roof_hood', label: 'Roof / Hood' },
+    { key: 'air_con', label: 'Air Con' },
+    { key: 'bodywork', label: 'Bodywork' },
+    { key: 'interior', label: 'Interior' },
+    { key: 'exterior', label: 'Exterior' },
+    { key: 'other', label: 'Other' }
+];
+
+function serviceCategoryOptions(selected = '') {
+    const opt = t => `<option value="${t.key}" ${t.key === selected ? 'selected' : ''}>${t.label}</option>`;
+    const known = new Set([...SERVICE_INTERVAL_TYPES, ...EXTRA_SERVICE_CATEGORIES].map(t => t.key));
+    const legacy = selected && !known.has(selected) ? `<option value="${selected}" selected>${selected}</option>` : '';
+    return `<optgroup label="Service Intervals">${SERVICE_INTERVAL_TYPES.map(opt).join('')}</optgroup>` +
+           `<optgroup label="Other Work">${EXTRA_SERVICE_CATEGORIES.map(opt).join('')}</optgroup>${legacy}`;
+}
 
 function renderServiceIntervalsForm(intervals) {
     const container = document.getElementById('service-intervals-form');
